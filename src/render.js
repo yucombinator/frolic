@@ -475,21 +475,21 @@ function buildMountainRange() {
   ridgeChain({
     n: 30, a0: -1.2, a1: -0.55, r0: 330, r1: 352, front: 5, back: 12, baseY: -2,
     peaks: [{ a: -1.05, h: 86, w: 0.22 }, { a: -0.75, h: 68, w: 0.18 }],
-    seed: 1.7, snowLine: 66, snowBand: 16,
+    seed: 1.7, snowLine: 96, snowBand: 16,
     rock: [0.54, 0.58, 0.66], rockDark: [0.28, 0.31, 0.38], snow: [0.94, 0.97, 1.0],
     tint: 0.99, green: false,
   });
   ridgeChain({
     n: 34, a0: -0.3, a1: 0.3, r0: 318, r1: 344, front: 5, back: 12, baseY: -2,
     peaks: [{ a: -0.1, h: 92, w: 0.20 }, { a: 0.15, h: 78, w: 0.18 }],
-    seed: 2.9, snowLine: 66, snowBand: 16,
+    seed: 2.9, snowLine: 96, snowBand: 16,
     rock: [0.55, 0.59, 0.67], rockDark: [0.29, 0.32, 0.39], snow: [0.94, 0.97, 1.0],
     tint: 1.02, green: false,
   });
   ridgeChain({
     n: 30, a0: 0.55, a1: 1.2, r0: 332, r1: 356, front: 5, back: 12, baseY: -2,
     peaks: [{ a: 0.82, h: 88, w: 0.22 }, { a: 1.12, h: 64, w: 0.18 }],
-    seed: 4.1, snowLine: 66, snowBand: 16,
+    seed: 4.1, snowLine: 96, snowBand: 16,
     rock: [0.53, 0.57, 0.65], rockDark: [0.27, 0.30, 0.37], snow: [0.94, 0.97, 1.0],
     tint: 0.98, green: false,
   });
@@ -622,8 +622,8 @@ function buildMountainRange() {
 
         // Rock/pine base — gray-blue rock or pine green, brightened with height.
         // (Constant per chain; all detail comes from the noise fields below.)
-        vec3 rockBase = vec3(0.54, 0.58, 0.66);
-        vec3 col = rockBase * (0.75 + 0.35 * clamp(vLocal.y / 70.0, 0.0, 1.0));
+        vec3 rockBase = vec3(0.52, 0.56, 0.64);
+        vec3 col = rockBase * (0.72 + 0.26 * clamp(vLocal.y / 70.0, 0.0, 1.0));
         if (green > 0.5) {
           col = mix(vec3(0.30, 0.36, 0.24), vec3(0.46, 0.52, 0.36), clamp(vLocal.y / 30.0, 0.0, 1.0));
         }
@@ -636,11 +636,12 @@ function buildMountainRange() {
         float n2 = fbm(vLocal * 0.38);  // mid detail
 
         // Snow from local height + noise-displaced snowline: ragged but
-        // continuous along the ridge (no per-quad banding).
+        // continuous along the ridge (no per-quad banding). Wide transition
+        // so only the upper massifs carry a bright cap.
         float snow = 0.0;
         if (snowLine < 900.0) {
-          float line = snowLine + (n1 - 0.5) * 14.0;
-          snow = smoothstep(line, line + 12.0, vLocal.y);
+          float line = snowLine + (n1 - 0.5) * 12.0;
+          snow = smoothstep(line, line + 22.0, vLocal.y);
         }
         snow *= 1.0 - green;
 
@@ -656,19 +657,26 @@ function buildMountainRange() {
         float band = sin(vLocal.y * 0.6 + n1 * 5.0) * 0.5 + 0.5;
         col *= 0.94 + 0.10 * band * (1.0 - snow);
 
-        // Snow brightening (only where the chain allows snow).
-        col = mix(col, vec3(0.96, 0.975, 1.0) * tint, snow);
+        // Snow brightening (only where the chain allows snow) — soft blue-
+        // white, not pure white, so caps stay readable under full sun.
+        col = mix(col, vec3(0.86, 0.90, 0.97) * tint, snow);
+
+        // Atmospheric haze by distance — the mountains sit 200-370 units
+        // out; far ridges melt toward the horizon instead of glowing white.
+        float dist = length(vLocal.xz);
+        float haze = clamp((dist - 140.0) / 240.0, 0.0, 1.0) * 0.65;
+        col = mix(col, vec3(0.78, 0.90, 1.0), haze * (1.0 - snow * 0.4));
 
         // Lighting: hemisphere + sun + rim, matching the scene constants.
-        vec3 skyC = vec3(0.81, 0.91, 1.00) * 0.95;
-        vec3 gndC = vec3(0.48, 0.62, 0.29) * 0.85;
+        vec3 skyC = vec3(0.81, 0.91, 1.00) * 0.85;
+        vec3 gndC = vec3(0.48, 0.62, 0.29) * 0.75;
         vec3 hemi = mix(gndC, skyC, N.y * 0.5 + 0.5);
         vec3 sunDir = normalize(vec3(40.0, 70.0, 25.0));
         float sunD = max(dot(N, sunDir), 0.0);
-        vec3 sunC = vec3(1.0, 0.95, 0.85) * 1.4 * sunD;
+        vec3 sunC = vec3(1.0, 0.95, 0.85) * 1.05 * sunD;
         vec3 rimDir = normalize(vec3(-45.0, 20.0, -30.0));
         float rimD = pow(max(dot(N, rimDir), 0.0), 1.6);
-        vec3 rimC = vec3(0.75, 0.89, 1.0) * 0.55 * rimD;
+        vec3 rimC = vec3(0.75, 0.89, 1.0) * 0.45 * rimD;
         vec3 light = hemi + sunC + rimC;
 
         // Output in sRGB like the renderer's built-in materials (the
