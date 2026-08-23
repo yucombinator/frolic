@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { initRender, resize } from './render.js?v=2';
-import { advanceWalk } from './walk.js?v=1';
+import { initRender, resize } from './render.js?v=4';
+import { advanceWalk } from './walk.js?v=2';
 import { generateFlowers } from './world.js?v=1';
 import { HILLS } from './hill.js?v=1';
 import { initAudio } from './audio.js?v=1';
@@ -41,17 +41,21 @@ function bindHold(el, key) {
   el.addEventListener('pointercancel', set(false));
   el.addEventListener('pointerleave', set(false));
 }
-for (const [id, key, label] of [['btnL', 'left', '◀ LEFT'], ['btnR', 'right', 'RIGHT ▶']]) {
-  const d = document.createElement('div');
-  d.id = id;
-  d.textContent = label;
-  d.style.cssText =
-    'position:fixed;bottom:24px;font-size:28px;font-weight:bold;color:#5a2a4a;' +
-    'background:rgba(255,255,255,0.75);border:3px solid #5a2a4a;border-radius:20px;' +
-    'padding:18px 30px;user-select:none;touch-action:none;cursor:pointer;z-index:10;' +
-    (key === 'left' ? 'left:24px;' : 'right:24px;');
-  document.body.appendChild(d);
-  bindHold(d, key);
+// Steering buttons are opt-in from the start page (off by default).
+function createSteerButtons() {
+  if (document.getElementById('btnL')) return; // already created
+  for (const [id, key, label] of [['btnL', 'left', '◀ LEFT'], ['btnR', 'right', 'RIGHT ▶']]) {
+    const d = document.createElement('div');
+    d.id = id;
+    d.textContent = label;
+    d.style.cssText =
+      'position:fixed;bottom:24px;font-size:28px;font-weight:bold;color:#5a2a4a;' +
+      'background:rgba(255,255,255,0.75);border:3px solid #5a2a4a;border-radius:20px;' +
+      'padding:18px 30px;user-select:none;touch-action:none;cursor:pointer;z-index:10;' +
+      (key === 'left' ? 'left:24px;' : 'right:24px;');
+    document.body.appendChild(d);
+    bindHold(d, key);
+  }
 }
 window.addEventListener('keydown', (e) => {
   if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') { input.jog = true; e.preventDefault(); }
@@ -99,7 +103,9 @@ let paused = false;
 let soundOn = true;
 const clock = new THREE.Clock();
 
+let voiceOn = false; // voice announcements are off by default
 function speak(text) {
+  if (!voiceOn) return;
   try {
     speechSynthesis?.cancel();
     speechSynthesis?.speak(new SpeechSynthesisUtterance(text));
@@ -119,6 +125,15 @@ function togglePause() {
   }
 }
 
+// Restore start-page preferences (both default OFF: voices + steering buttons).
+try {
+  const vEl = document.getElementById('optVoice');
+  const bEl = document.getElementById('optButtons');
+  if (vEl && localStorage.getItem('frolic.voice')) vEl.checked = localStorage.getItem('frolic.voice') === '1';
+  if (bEl && localStorage.getItem('frolic.buttons')) bEl.checked = localStorage.getItem('frolic.buttons') === '1';
+  voiceOn = vEl ? vEl.checked : false;
+} catch { /* storage unavailable */ }
+
 function startGame() {
   if (!render) {
     // No WebGL — the fallback screen is already showing; do not fake a game.
@@ -126,6 +141,13 @@ function startGame() {
     document.getElementById('title')?.classList.add('hidden');
     return;
   }
+  // Apply start-page options (off by default) and remember them.
+  voiceOn = document.getElementById('optVoice')?.checked ?? false;
+  if (document.getElementById('optButtons')?.checked) createSteerButtons();
+  try {
+    localStorage.setItem('frolic.voice', voiceOn ? '1' : '0');
+    localStorage.setItem('frolic.buttons', document.getElementById('optButtons')?.checked ? '1' : '0');
+  } catch { /* storage unavailable */ }
   started = true;
   document.getElementById('title')?.classList.add('hidden');
   document.getElementById('btnPause')?.classList.remove('hidden');

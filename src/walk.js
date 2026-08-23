@@ -2,7 +2,7 @@
 export const WALK_SPEED = 3.0;   // m/s, stroll
 export const JOG_SPEED = 5.0;    // m/s, Space held
 export const TURN_RATE = 1.7;    // rad/s at full steer
-export const EYE_HEIGHT = 1.7;   // camera height above terrain
+export const EYE_HEIGHT = 4.2;   // camera height above terrain (clears the ~3.8m grass tops)
 export const BOB_RATE = 1.79;    // bobPhase radians per meter (~1.7 steps/s at walk, ~2.8 at jog)
 export const BOB_AMT_WALK = 0.035; // head-bob amplitude (m), stroll
 export const BOB_AMT_JOG = 0.055;  // head-bob amplitude (m), jog

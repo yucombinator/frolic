@@ -4,7 +4,7 @@ import { FLOWER_KINDS } from './world.js?v=1';
 import { HILLS } from './hill.js?v=1';
 import { windAt } from './wind.js?v=1';
 import { createGrass } from './grass.js?v=9';
-import { EYE_HEIGHT } from './walk.js?v=1';
+import { EYE_HEIGHT } from './walk.js?v=2';
 
 export const SKY_TOP = 0x529ef0;
 export const SKY_BOTTOM = 0xc8e6ff;
@@ -733,6 +733,10 @@ export function initRender(canvas) {
         if (c.position.x > 190) c.position.x = -190;
         c.position.z = camera.position.z + c.userData.zo;
       }
+
+      // Draw the frame. (The original main.js issued renderer.render itself;
+      // here frame() owns the full update-then-draw cycle.)
+      renderer.render(scene, camera);
     },
   };
 

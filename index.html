@@ -21,6 +21,8 @@
     min-height: 64px; margin: 6px;
   }
   .bigbtn:hover { background: #f0f7e8; }
+  .opt { display: block; margin: 12px 0; font-size: 18px; color: #3a6b2f; cursor: pointer; user-select: none; }
+  .opt input { width: 20px; height: 20px; margin-right: 10px; vertical-align: middle; }
   #btnPause {
     position: fixed; top: 18px; right: 18px; z-index: 5;
     font-size: 18px; padding: 12px 22px; min-height: auto;
@@ -51,6 +53,8 @@
   <h1>🌾 Frolic</h1>
   <p>Wander the meadow. No goal, no hurry.<br>
      Hold <strong>LEFT</strong> / <strong>RIGHT</strong> to turn · <strong>SPACE</strong> to jog · <strong>ESC</strong> to pause.</p>
+  <label class="opt" for="optVoice"><input type="checkbox" id="optVoice"> Voice announcements</label>
+  <label class="opt" for="optButtons"><input type="checkbox" id="optButtons"> Show steering buttons</label>
   <button id="btnStart" class="bigbtn" type="button">Start walking</button>
 </div>
 
@@ -69,6 +73,6 @@
      Try a current version of Chrome, Firefox, or Safari.</p>
 </div>
 
-<script type="module" src="./src/main.js?v=2"></script>
+<script type="module" src="./src/main.js?v=4"></script>
 </body>
 </html>
