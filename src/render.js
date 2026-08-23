@@ -404,7 +404,7 @@ function buildMountainRange() {
     let env = 0;
     for (const p of peaks) env = Math.max(env, p.h * Math.exp(-((a - p.a) ** 2) / (2 * p.w * p.w)));
     const r = ridged(a * 1.8 + seed, seed);
-    return Math.max(4, env * (0.30 + 1.30 * Math.pow(r, 1.25)));
+    return Math.max(4, env * (0.60 + 1.05 * Math.pow(r, 1.15)));
   }
 
   const hazed = (c, k) => [
@@ -419,7 +419,8 @@ function buildMountainRange() {
     const pts = [];
     for (let i = 0; i < n; i++) {
       const t = i / (n - 1);
-      const taper = Math.pow(0.5 - 0.5 * Math.cos(Math.PI * clamp(t, 0, 1)), 0.7);
+      // Flat plateau across the chain; only the ends roll off to the plain.
+      const taper = clamp(Math.min(t, 1 - t) / 0.16, 0, 1);
       const a = o.a0 + (o.a1 - o.a0) * t;
       const r = o.r0 + (o.r1 - o.r0) * t + (Math.random() - 0.5) * 3;
       const h = profile(a, o.peaks, o.seed) * taper;
@@ -543,8 +544,113 @@ function buildMountainRange() {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
-    vertexColors: true, flatShading: true, side: THREE.DoubleSide, fog: false,
+
+  // Procedural rock texturing in the fragment shader. Flat vertex colors read
+  // as plastic; real mountains have grain, scree on steep faces, strata, and
+  // ragged snowlines. We replicate the scene lights (hemisphere + sun + rim)
+  // in-shader and layer 3-octave value noise for detail, keyed to the baked
+  // height/rock colour so snow and haze stay consistent with the geometry.
+  const mesh = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+    side: THREE.DoubleSide,
+    fog: false,
+    vertexColors: true,
+    vertexShader: `
+      varying vec3 vWorld;
+      varying vec3 vColor;
+      varying vec3 vNormal;
+      void main() {
+        vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+        vColor = color;
+        vNormal = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      varying vec3 vWorld;
+      varying vec3 vColor;
+      varying vec3 vNormal;
+
+      float hash(vec3 p) {
+        p = fract(p * 0.3183099 + 0.1);
+        p *= 17.0;
+        return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+      }
+      float vnoise(vec3 x) {
+        vec3 i = floor(x);
+        vec3 f = fract(x);
+        f = f * f * (3.0 - 2.0 * f);
+        float n000 = hash(i);
+        float n100 = hash(i + vec3(1.0, 0.0, 0.0));
+        float n010 = hash(i + vec3(0.0, 1.0, 0.0));
+        float n110 = hash(i + vec3(1.0, 1.0, 0.0));
+        float n001 = hash(i + vec3(0.0, 0.0, 1.0));
+        float n101 = hash(i + vec3(1.0, 0.0, 1.0));
+        float n011 = hash(i + vec3(0.0, 1.0, 1.0));
+        float n111 = hash(i + vec3(1.0, 1.0, 1.0));
+        return mix(
+          mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y),
+          mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y),
+          f.z);
+      }
+      float fbm(vec3 p) {
+        return vnoise(p) * 0.55 + vnoise(p * 2.3) * 0.28 + vnoise(p * 5.1) * 0.17;
+      }
+
+      void main() {
+        // Flat facet normal — the geometry is non-indexed with computed
+        // normals, so every vertex already carries its face normal.
+        vec3 N = normalize(vNormal);
+        if (!gl_FrontFacing) N = -N;
+
+        vec3 col = vColor;
+        float n1 = fbm(vWorld * 0.12);  // broad structure
+        float n2 = fbm(vWorld * 0.45);  // mid detail
+        float n3 = fbm(vWorld * 1.40);  // fine grain
+
+        // Where the baked colour is bright, treat as snow and keep it clean;
+        // elsewhere the rock gets grain, scree and strata.
+        float lum = dot(col, vec3(0.299, 0.587, 0.114));
+        float snowMask = smoothstep(0.62, 0.82, lum);
+
+        // Rock grain.
+        col *= 0.90 + 0.20 * n3;
+
+        // Scree: loose darker talus on steep faces, absent under snow.
+        float slope = 1.0 - clamp(N.y, 0.0, 1.0);
+        vec3 screeCol = mix(vec3(0.55, 0.53, 0.50), vec3(0.38, 0.36, 0.34), n2);
+        col = mix(col, screeCol, smoothstep(0.30, 0.60, slope) * (1.0 - snowMask) * 0.45);
+
+        // Strata banding along the height axis, gently broken by noise.
+        float band = sin(vWorld.y * 0.7 + n1 * 5.0) * 0.5 + 0.5;
+        col *= 0.93 + 0.12 * band * (1.0 - snowMask);
+
+        // Ragged snowline: brighten the baked snow transition with noise so
+        // the cap edge is patchy, not a clean horizontal band.
+        float edge = smoothstep(0.30, 0.62, snowMask * (0.5 + n1) - 0.08 + n2 * 0.25);
+        col = mix(col, vec3(0.96, 0.975, 1.0), edge * 0.35 * (0.4 + 0.6 * n2));
+
+        // Lighting: hemisphere + sun + rim, matching the scene constants.
+        vec3 skyC = vec3(0.81, 0.91, 1.00) * 0.95;
+        vec3 gndC = vec3(0.48, 0.62, 0.29) * 0.85;
+        vec3 hemi = mix(gndC, skyC, N.y * 0.5 + 0.5);
+        vec3 sunDir = normalize(vec3(40.0, 70.0, 25.0));
+        float sunD = max(dot(N, sunDir), 0.0);
+        vec3 sunC = vec3(1.0, 0.95, 0.85) * 1.4 * sunD;
+        vec3 rimDir = normalize(vec3(-45.0, 20.0, -30.0));
+        float rimD = pow(max(dot(N, rimDir), 0.0), 1.6);
+        vec3 rimC = vec3(0.75, 0.89, 1.0) * 0.55 * rimD;
+        vec3 light = hemi + sunC + rimC;
+
+        // Output in sRGB like the renderer's built-in materials (the
+        // renderer's output color space is sRGB; ShaderMaterial must encode
+        // manually since three does not inject linearToOutputTexel here).
+        vec3 linear = min(col * light, vec3(1.0));
+        vec3 encoded = mix(pow(linear, vec3(1.0 / 2.2)), linear * 12.92,
+          vec3(lessThanEqual(linear, vec3(0.0031308))));
+        gl_FragColor = vec4(encoded, 1.0);
+      }
+    `,
   }));
   mesh.frustumCulled = false;
   return mesh;
