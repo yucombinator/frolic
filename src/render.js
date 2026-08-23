@@ -350,6 +350,156 @@ const CROWN_LIFT = STEM_LEN + 0.35; // crown height above the terrain (stands ab
 
 const KIND_SCALE = [1.0, 1.05, 0.92, 1.1];
 
+// A low-poly mountain range on the horizon — the Canadian Rockies seen from
+// the Alberta plains. Built as layered ridgelines, not cones: each ridge is a
+// chain of crest points whose height comes from massif noise (broad peaks
+// plus mid and fine jitter), so the range reads as believable massifs with
+// saddles and valleys rather than a row of spikes. Front layers are split
+// into separate chains whose gaps are valleys opening onto the ranges
+// behind. Facets are flat-shaded so the sun and rim light shape the rock.
+function buildMountainRange() {
+  const pos = [];
+  const col = [];
+  const clamp = THREE.MathUtils.clamp;
+  const HAZE = [0.78, 0.90, 1.0];
+  const push = (x, y, z, r, g, b) => { pos.push(x, y, z); col.push(r, g, b); };
+
+  // Smooth height noise along the ridge angle: gaussian massifs + mid-scale
+  // undulation + fine crest jitter. Layered so peaks cluster into massifs
+  // separated by deep saddles — a believable skyline, not uniform spikes.
+  function profile(a, peaks, midAmp, fineAmp, seed) {
+    let h = 0;
+    for (const p of peaks) h += p.h * Math.exp(-((a - p.a) ** 2) / (2 * p.w * p.w));
+    h += midAmp * Math.sin(a * 2.1 + seed * 1.7) * Math.cos(a * 1.3 + seed * 0.6);
+    h += fineAmp * Math.sin(a * 6.3 + seed * 3.1) * Math.cos(a * 4.1 + seed * 1.9);
+    return Math.max(4, h);
+  }
+
+  const hazed = (c, k) => [
+    c[0] + (HAZE[0] - c[0]) * k,
+    c[1] + (HAZE[1] - c[1]) * k,
+    c[2] + (HAZE[2] - c[2]) * k,
+  ];
+
+  // One ridgeline: front and back faces fan from the crest down to the plain.
+  function ridgeChain(o) {
+    const n = o.n;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      const taper = Math.pow(0.5 - 0.5 * Math.cos(Math.PI * clamp(t, 0, 1)), 0.7);
+      const a = o.a0 + (o.a1 - o.a0) * t;
+      const r = o.r0 + (o.r1 - o.r0) * t + (Math.random() - 0.5) * 3;
+      const h = profile(a, o.peaks, o.midAmp, o.fineAmp, o.seed) * taper;
+      pts.push({ a, r, h });
+    }
+    // Per-point colours: crest (rock -> snow), front base (rock), back base (shade).
+    const crestC = (h) => {
+      if (o.green) {
+        const t = clamp(h / o.maxH, 0, 1);
+        return [(0.34 + 0.20 * t) * o.tint, (0.40 + 0.20 * t) * o.tint, (0.26 + 0.14 * t) * o.tint];
+      }
+      const sn = clamp((h - o.snowLine) / o.snowBand, 0, 1);
+      return [
+        (o.rock[0] + (o.snow[0] - o.rock[0]) * sn) * o.tint,
+        (o.rock[1] + (o.snow[1] - o.rock[1]) * sn) * o.tint,
+        (o.rock[2] + (o.snow[2] - o.rock[2]) * sn) * o.tint,
+      ];
+    };
+    const F = [], C = [], B = [];
+    const cF = [], cC = [], cB = [];
+    for (const p of pts) {
+      const sa = Math.sin(p.a), ca = Math.cos(p.a);
+      C.push([p.r * sa, p.h, -p.r * ca]);
+      F.push([(p.r - o.front) * sa, o.baseY, -(p.r - o.front) * ca]);
+      B.push([(p.r + o.back) * sa, o.baseY - 1, -(p.r + o.back) * ca]);
+      cC.push(hazed(crestC(p.h), 0.10 * (1 - clamp(p.h / 120, 0, 1))));
+      const rock = o.green ? [0.30, 0.36, 0.24] : [o.rock[0] * 0.86, o.rock[1] * 0.86, o.rock[2] * 0.86];
+      const dark = o.green ? [0.21, 0.26, 0.16] : [o.rockDark[0], o.rockDark[1], o.rockDark[2]];
+      cF.push(hazed(rock, 0.5));
+      cB.push(hazed(dark, 0.55));
+    }
+    for (let i = 0; i < n - 1; i++) {
+      const j = i + 1;
+      const tri = (v1, c1, v2, c2, v3, c3) => {
+        push(v1[0], v1[1], v1[2], c1[0], c1[1], c1[2]);
+        push(v2[0], v2[1], v2[2], c2[0], c2[1], c2[2]);
+        push(v3[0], v3[1], v3[2], c3[0], c3[1], c3[2]);
+      };
+      // front face (camera side)
+      tri(F[i], cF[i], C[i], cC[i], F[j], cF[j]);
+      tri(C[i], cC[i], C[j], cC[j], F[j], cF[j]);
+      // back face (shadow side)
+      tri(C[i], cC[i], B[i], cB[i], C[j], cC[j]);
+      tri(B[i], cB[i], B[j], cB[j], C[j], cC[j]);
+    }
+  }
+
+  // --- Back wall: one continuous range of snowy massifs across the horizon.
+  ridgeChain({
+    n: 52, a0: -2.0, a1: 2.0, r0: 320, r1: 355, front: 5, back: 12, baseY: -2,
+    peaks: [
+      { a: -1.55, h: 86, w: 0.30 }, { a: -1.05, h: 64, w: 0.22 },
+      { a: -0.55, h: 92, w: 0.28 }, { a: -0.10, h: 70, w: 0.20 },
+      { a: 0.35, h: 88, w: 0.30 }, { a: 0.85, h: 62, w: 0.22 },
+      { a: 1.30, h: 95, w: 0.30 }, { a: 1.75, h: 72, w: 0.24 },
+    ],
+    midAmp: 9, fineAmp: 5, seed: 1.7,
+    snowLine: 62, snowBand: 18,
+    rock: [0.54, 0.58, 0.66], rockDark: [0.28, 0.31, 0.38], snow: [0.94, 0.97, 1.0],
+    tint: 1.0, green: false,
+  });
+
+  // --- Mid ridges: lower, broken into sections whose gaps are valleys that
+  // open onto the back wall.
+  ridgeChain({
+    n: 26, a0: -1.9, a1: -0.55, r0: 272, r1: 290, front: 4, back: 10, baseY: -2,
+    peaks: [{ a: -1.6, h: 52, w: 0.30 }, { a: -1.15, h: 44, w: 0.24 }, { a: -0.75, h: 50, w: 0.26 }],
+    midAmp: 7, fineAmp: 4, seed: 3.1,
+    snowLine: 999, snowBand: 1,
+    rock: [0.52, 0.56, 0.63], rockDark: [0.27, 0.30, 0.36], snow: [0.94, 0.97, 1.0],
+    tint: 1.03, green: false,
+  });
+  ridgeChain({
+    n: 24, a0: -0.42, a1: 0.5, r0: 278, r1: 292, front: 4, back: 10, baseY: -2,
+    peaks: [{ a: -0.15, h: 48, w: 0.28 }, { a: 0.2, h: 42, w: 0.24 }],
+    midAmp: 7, fineAmp: 4, seed: 4.4,
+    snowLine: 999, snowBand: 1,
+    rock: [0.52, 0.56, 0.63], rockDark: [0.27, 0.30, 0.36], snow: [0.94, 0.97, 1.0],
+    tint: 0.97, green: false,
+  });
+  ridgeChain({
+    n: 26, a0: 0.62, a1: 1.9, r0: 270, r1: 288, front: 4, back: 10, baseY: -2,
+    peaks: [{ a: 1.0, h: 54, w: 0.30 }, { a: 1.5, h: 46, w: 0.26 }],
+    midAmp: 7, fineAmp: 4, seed: 5.6,
+    snowLine: 999, snowBand: 1,
+    rock: [0.52, 0.56, 0.63], rockDark: [0.27, 0.30, 0.36], snow: [0.94, 0.97, 1.0],
+    tint: 1.0, green: false,
+  });
+
+  // --- Pine foothills: the nearest broken chain of forested ridges.
+  const foot = (o) => ridgeChain({ front: 3, back: 8, baseY: -2, green: true, maxH: 30,
+    midAmp: 4, fineAmp: 2.5, snowLine: 999, snowBand: 1, tint: 1.0, ...o });
+  foot({ n: 20, a0: -1.75, a1: -0.95, r0: 228, r1: 240,
+    peaks: [{ a: -1.5, h: 26, w: 0.28 }, { a: -1.15, h: 20, w: 0.24 }], seed: 6.1 });
+  foot({ n: 18, a0: -0.75, a1: -0.2, r0: 232, r1: 244,
+    peaks: [{ a: -0.5, h: 24, w: 0.26 }], seed: 7.3 });
+  foot({ n: 18, a0: 0.1, a1: 0.7, r0: 226, r1: 240,
+    peaks: [{ a: 0.4, h: 22, w: 0.28 }], seed: 8.5 });
+  foot({ n: 22, a0: 0.9, a1: 1.75, r0: 230, r1: 246,
+    peaks: [{ a: 1.2, h: 28, w: 0.30 }, { a: 1.6, h: 20, w: 0.24 }], seed: 9.7 });
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+    vertexColors: true, flatShading: true, side: THREE.DoubleSide, fog: false,
+  }));
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
 export function initRender(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.0));
@@ -667,6 +817,10 @@ export function initRender(canvas) {
     clouds.push(c);
   }
 
+  // Distant Rockies on the horizon, tracked with the camera below.
+  const mountains = buildMountainRange();
+  scene.add(mountains);
+
   // Drifting pollen / seed motes: a soft haze of tiny specks floating on the
   // wind inside a box that follows the camera.
   const MOTES = 220;
@@ -850,6 +1004,10 @@ export function initRender(canvas) {
         if (c.position.x > 190) c.position.x = -190;
         c.position.z = camera.position.z + c.userData.zo;
       }
+
+      // Mountains sit on the horizon — follow the walker so the range stays
+      // put in the distance while the plains scroll by.
+      mountains.position.set(camera.position.x, 0, camera.position.z);
 
       // Pollen motes drift on the wind inside a box that follows the camera.
       motes.position.copy(camera.position);
