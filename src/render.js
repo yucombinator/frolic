@@ -435,59 +435,64 @@ function buildMountainRange() {
     }
   }
 
-  // --- Back wall: one continuous range of snowy massifs across the horizon.
+  // --- Back range: three separated snowy massif groups. Gaps between the
+  // groups are valleys that drop all the way to the plain, and the sides
+  // beyond ±1.2 rad are open prairie — the range is not a continuous wall.
   ridgeChain({
-    n: 52, a0: -2.0, a1: 2.0, r0: 320, r1: 355, front: 5, back: 12, baseY: -2,
-    peaks: [
-      { a: -1.55, h: 86, w: 0.30 }, { a: -1.05, h: 64, w: 0.22 },
-      { a: -0.55, h: 92, w: 0.28 }, { a: -0.10, h: 70, w: 0.20 },
-      { a: 0.35, h: 88, w: 0.30 }, { a: 0.85, h: 62, w: 0.22 },
-      { a: 1.30, h: 95, w: 0.30 }, { a: 1.75, h: 72, w: 0.24 },
-    ],
-    midAmp: 9, fineAmp: 5, seed: 1.7,
-    snowLine: 62, snowBand: 18,
+    n: 30, a0: -1.2, a1: -0.55, r0: 330, r1: 352, front: 5, back: 12, baseY: -2,
+    peaks: [{ a: -1.05, h: 86, w: 0.22 }, { a: -0.75, h: 68, w: 0.18 }],
+    midAmp: 7, fineAmp: 5, seed: 1.7,
+    snowLine: 66, snowBand: 16,
     rock: [0.54, 0.58, 0.66], rockDark: [0.28, 0.31, 0.38], snow: [0.94, 0.97, 1.0],
-    tint: 1.0, green: false,
+    tint: 0.99, green: false,
+  });
+  ridgeChain({
+    n: 34, a0: -0.3, a1: 0.3, r0: 318, r1: 344, front: 5, back: 12, baseY: -2,
+    peaks: [{ a: -0.1, h: 92, w: 0.20 }, { a: 0.15, h: 78, w: 0.18 }],
+    midAmp: 8, fineAmp: 5, seed: 2.9,
+    snowLine: 66, snowBand: 16,
+    rock: [0.55, 0.59, 0.67], rockDark: [0.29, 0.32, 0.39], snow: [0.94, 0.97, 1.0],
+    tint: 1.02, green: false,
+  });
+  ridgeChain({
+    n: 30, a0: 0.55, a1: 1.2, r0: 332, r1: 356, front: 5, back: 12, baseY: -2,
+    peaks: [{ a: 0.82, h: 88, w: 0.22 }, { a: 1.12, h: 64, w: 0.18 }],
+    midAmp: 7, fineAmp: 5, seed: 4.1,
+    snowLine: 66, snowBand: 16,
+    rock: [0.53, 0.57, 0.65], rockDark: [0.27, 0.30, 0.37], snow: [0.94, 0.97, 1.0],
+    tint: 0.98, green: false,
   });
 
-  // --- Mid ridges: lower, broken into sections whose gaps are valleys that
-  // open onto the back wall.
+  // --- Mid ridges: sit in front of the valley mouths, lower than the back
+  // massifs, so the valleys read as depth-layered passes onto the range.
   ridgeChain({
-    n: 26, a0: -1.9, a1: -0.55, r0: 272, r1: 290, front: 4, back: 10, baseY: -2,
-    peaks: [{ a: -1.6, h: 52, w: 0.30 }, { a: -1.15, h: 44, w: 0.24 }, { a: -0.75, h: 50, w: 0.26 }],
-    midAmp: 7, fineAmp: 4, seed: 3.1,
+    n: 22, a0: -0.55, a1: -0.2, r0: 272, r1: 290, front: 4, back: 10, baseY: -2,
+    peaks: [{ a: -0.4, h: 48, w: 0.20 }, { a: -0.28, h: 40, w: 0.16 }],
+    midAmp: 6, fineAmp: 4, seed: 5.3,
     snowLine: 999, snowBand: 1,
     rock: [0.52, 0.56, 0.63], rockDark: [0.27, 0.30, 0.36], snow: [0.94, 0.97, 1.0],
     tint: 1.03, green: false,
   });
   ridgeChain({
-    n: 24, a0: -0.42, a1: 0.5, r0: 278, r1: 292, front: 4, back: 10, baseY: -2,
-    peaks: [{ a: -0.15, h: 48, w: 0.28 }, { a: 0.2, h: 42, w: 0.24 }],
-    midAmp: 7, fineAmp: 4, seed: 4.4,
+    n: 22, a0: 0.2, a1: 0.55, r0: 268, r1: 288, front: 4, back: 10, baseY: -2,
+    peaks: [{ a: 0.35, h: 50, w: 0.20 }, { a: 0.48, h: 40, w: 0.16 }],
+    midAmp: 6, fineAmp: 4, seed: 6.6,
     snowLine: 999, snowBand: 1,
     rock: [0.52, 0.56, 0.63], rockDark: [0.27, 0.30, 0.36], snow: [0.94, 0.97, 1.0],
     tint: 0.97, green: false,
-  });
-  ridgeChain({
-    n: 26, a0: 0.62, a1: 1.9, r0: 270, r1: 288, front: 4, back: 10, baseY: -2,
-    peaks: [{ a: 1.0, h: 54, w: 0.30 }, { a: 1.5, h: 46, w: 0.26 }],
-    midAmp: 7, fineAmp: 4, seed: 5.6,
-    snowLine: 999, snowBand: 1,
-    rock: [0.52, 0.56, 0.63], rockDark: [0.27, 0.30, 0.36], snow: [0.94, 0.97, 1.0],
-    tint: 1.0, green: false,
   });
 
   // --- Pine foothills: the nearest broken chain of forested ridges.
   const foot = (o) => ridgeChain({ front: 3, back: 8, baseY: -2, green: true, maxH: 30,
     midAmp: 4, fineAmp: 2.5, snowLine: 999, snowBand: 1, tint: 1.0, ...o });
-  foot({ n: 20, a0: -1.75, a1: -0.95, r0: 228, r1: 240,
-    peaks: [{ a: -1.5, h: 26, w: 0.28 }, { a: -1.15, h: 20, w: 0.24 }], seed: 6.1 });
-  foot({ n: 18, a0: -0.75, a1: -0.2, r0: 232, r1: 244,
-    peaks: [{ a: -0.5, h: 24, w: 0.26 }], seed: 7.3 });
-  foot({ n: 18, a0: 0.1, a1: 0.7, r0: 226, r1: 240,
-    peaks: [{ a: 0.4, h: 22, w: 0.28 }], seed: 8.5 });
-  foot({ n: 22, a0: 0.9, a1: 1.75, r0: 230, r1: 246,
-    peaks: [{ a: 1.2, h: 28, w: 0.30 }, { a: 1.6, h: 20, w: 0.24 }], seed: 9.7 });
+  foot({ n: 16, a0: -1.1, a1: -0.75, r0: 230, r1: 244,
+    peaks: [{ a: -0.95, h: 24, w: 0.20 }], seed: 7.2 });
+  foot({ n: 16, a0: -0.4, a1: -0.05, r0: 226, r1: 240,
+    peaks: [{ a: -0.25, h: 20, w: 0.18 }], seed: 8.4 });
+  foot({ n: 16, a0: 0.25, a1: 0.6, r0: 228, r1: 242,
+    peaks: [{ a: 0.42, h: 22, w: 0.20 }], seed: 9.6 });
+  foot({ n: 16, a0: 0.95, a1: 1.3, r0: 230, r1: 246,
+    peaks: [{ a: 1.15, h: 26, w: 0.22 }], seed: 10.8 });
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
