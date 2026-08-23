@@ -664,25 +664,28 @@ function buildMountainRange() {
         // Atmospheric haze by distance — the mountains sit 200-370 units
         // out; far ridges melt toward the horizon instead of glowing white.
         float dist = length(vLocal.xz);
-        float haze = clamp((dist - 140.0) / 240.0, 0.0, 1.0) * 0.65;
-        col = mix(col, vec3(0.78, 0.90, 1.0), haze * (1.0 - snow * 0.4));
+        float haze = clamp((dist - 160.0) / 240.0, 0.0, 1.0) * 0.4;
+        col = mix(col, vec3(0.72, 0.84, 0.96), haze * (1.0 - snow * 0.4));
 
         // Lighting: hemisphere + sun + rim, matching the scene constants.
-        vec3 skyC = vec3(0.81, 0.91, 1.00) * 0.85;
-        vec3 gndC = vec3(0.48, 0.62, 0.29) * 0.75;
+        vec3 skyC = vec3(0.81, 0.91, 1.00) * 0.75;
+        vec3 gndC = vec3(0.48, 0.62, 0.29) * 0.6;
         vec3 hemi = mix(gndC, skyC, N.y * 0.5 + 0.5);
         vec3 sunDir = normalize(vec3(40.0, 70.0, 25.0));
         float sunD = max(dot(N, sunDir), 0.0);
-        vec3 sunC = vec3(1.0, 0.95, 0.85) * 1.05 * sunD;
+        vec3 sunC = vec3(1.0, 0.95, 0.85) * 0.8 * sunD;
         vec3 rimDir = normalize(vec3(-45.0, 20.0, -30.0));
         float rimD = pow(max(dot(N, rimDir), 0.0), 1.6);
-        vec3 rimC = vec3(0.75, 0.89, 1.0) * 0.45 * rimD;
+        vec3 rimC = vec3(0.75, 0.89, 1.0) * 0.35 * rimD;
         vec3 light = hemi + sunC + rimC;
+
+        // Soft shoulder: 1 - exp(-x) keeps sunlit faces from clipping to
+        // pure white while preserving the lit/dark contrast.
+        vec3 linear = 1.0 - exp(-col * light * 1.35);
 
         // Output in sRGB like the renderer's built-in materials (the
         // renderer's output color space is sRGB; ShaderMaterial must encode
         // manually since three does not inject linearToOutputTexel here).
-        vec3 linear = min(col * light, vec3(1.0));
         vec3 encoded = mix(pow(linear, vec3(1.0 / 2.2)), linear * 12.92,
           vec3(lessThanEqual(linear, vec3(0.0031308))));
         gl_FragColor = vec4(encoded, 1.0);
