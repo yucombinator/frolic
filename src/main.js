@@ -3,7 +3,7 @@ import { initRender, resize } from './render.js?v=21';
 import { advanceWalk } from './walk.js?v=2';
 import { generateFlowers } from './world.js?v=1';
 import { HILLS } from './hill.js?v=1';
-import { initAudio } from './audio.js?v=2';
+import { initAudio } from './audio.js?v=3';
 
 const canvasWrap = document.getElementById('game');
 const canvas = document.createElement('canvas');

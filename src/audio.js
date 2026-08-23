@@ -21,19 +21,22 @@ let sparkArmed = false; // a sparkle chain is scheduled
 let lfo = null;
 let birdsTimer = null; // timeout handle for the wandering birdsong
 
-// Slow, spacey chord cycle (each entry: array of frequencies in Hz).
-// Voices drift between m9 / add9 / maj7 colour in a C-major-ish family.
+// Slow, spacey chord cycle. Each entry: { root, notes } — frequencies in Hz
+// in a C-major-ish family (Cmaj7 / Am9 / Dm9 / Fmaj7 / Gmaj9 / Em7). The
+// progression is a weighted random walk, so the pad wanders but stays in key.
 const AMBIENT_CHORDS = [
-  [146.83, 220.0, 349.23, 440.0],   // D3 A3 F4 A4
-  [130.81, 261.63, 392.0, 493.88],  // C3 C4 G4 B4
-  [110.0, 220.0, 329.63, 493.88],   // A2 A3 E4 B4
-  [174.61, 261.63, 349.23, 440.0],  // F3 C4 F4 A4
+  { root: 130.81, notes: [130.81, 261.63, 392.0, 493.88] }, // Cmaj7
+  { root: 110.0, notes: [110.0, 220.0, 329.63, 493.88] },   // Am(add9)
+  { root: 146.83, notes: [146.83, 220.0, 349.23, 440.0] },  // Dm9
+  { root: 174.61, notes: [174.61, 261.63, 349.23, 440.0] }, // Fmaj7
+  { root: 98.0, notes: [98.0, 196.0, 293.66, 392.0, 493.88] }, // Gmaj9
+  { root: 82.41, notes: [82.41, 164.81, 246.94, 329.63, 392.0] }, // Em7
 ];
-const CHORD_S = 26;
-const CROSSFADE_S = 4;
+const CHORD_S = 26;       // baseline; each chord picks its own 18-32s
+const CROSSFADE_S = 4;    // baseline; each chord picks its own crossfade
 
-// C major pentatonic, high register (Hz).
-const SPARKLE_NOTES = [523.25, 587.33, 659.25, 783.99, 880.0, 987.77, 1046.5];
+// C major pentatonic across two octaves (Hz) — sparkles wander the range.
+const SPARKLE_NOTES = [523.25, 587.33, 659.25, 783.99, 880.0, 987.77, 1046.5, 1174.66, 1318.51, 1567.98];
 
 export function initAudio() {
   if (ctx) return getApi();
@@ -78,79 +81,145 @@ function rmsDb() {
 
 // --- ambient engine ---------------------------------------------------
 
-function spawnChord(freqs, startAt) {
+// Spawn one chord with per-chord randomness: pick a subset of its notes, add
+// a low root drone, widen or narrow the chorus, and let each voice drift in
+// level so every occurrence sounds a little different. `durS` is this chord's
+// own length; `fadeS` its crossfade.
+function spawnChord(chord, startAt, durS = CHORD_S, fadeS = CROSSFADE_S) {
+  // Drop one mid note sometimes so the voicing shifts between repetitions.
+  let freqs = chord.notes.slice();
+  if (freqs.length > 3 && Math.random() < 0.35) {
+    freqs.splice(1 + Math.floor(Math.random() * (freqs.length - 2)), 1);
+  }
+  // A low root drone an octave under the bass for weight.
+  if (Math.random() < 0.8) {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = chord.root / 2;
+    osc.detune.value = (Math.random() - 0.5) * 8;
+    const g = ctx.createGain();
+    const amp = (0.05 + Math.random() * 0.03) / Math.sqrt(freqs.length);
+    g.gain.setValueAtTime(0.0001, startAt);
+    g.gain.exponentialRampToValueAtTime(amp, startAt + fadeS);
+    g.gain.setValueAtTime(amp, startAt + durS - 1);
+    g.gain.exponentialRampToValueAtTime(0.0001, startAt + durS + 1);
+    osc.connect(g).connect(ambientFilter);
+    osc.start(startAt);
+    osc.stop(startAt + durS + 3);
+    ambientVoices.add({ osc, g, stop: startAt + durS + 3 });
+  }
+  const spread = 1.5 + Math.random() * 3.5; // chorus width varies
   for (const f of freqs) {
     // Two detuned sine voices per pitch (gentle chorus).
-    for (const detune of [-3.5, 3.5]) {
+    for (const detune of [-spread, spread]) {
       const osc = ctx.createOscillator();
       osc.type = 'sine';
       osc.frequency.value = f;
-      osc.detune.value = detune;
+      osc.detune.value = detune + (Math.random() - 0.5) * 2;
       const g = ctx.createGain();
-      const amp = 0.11 / Math.sqrt(freqs.length);
+      const amp = (0.09 + Math.random() * 0.04) / Math.sqrt(freqs.length);
       g.gain.setValueAtTime(0.0001, startAt);
-      g.gain.exponentialRampToValueAtTime(amp, startAt + CROSSFADE_S);
-      g.gain.setValueAtTime(amp, startAt + CHORD_S - 1);
-      g.gain.exponentialRampToValueAtTime(0.0001, startAt + CHORD_S + 1);
+      g.gain.exponentialRampToValueAtTime(amp, startAt + fadeS);
+      g.gain.setValueAtTime(amp, startAt + durS - 1);
+      g.gain.exponentialRampToValueAtTime(0.0001, startAt + durS + 1);
       osc.connect(g).connect(ambientFilter);
       osc.start(startAt);
-      osc.stop(startAt + CHORD_S + 3);
-      ambientVoices.add({ osc, g, stop: startAt + CHORD_S + 3 });
+      osc.stop(startAt + durS + 3);
+      ambientVoices.add({ osc, g, stop: startAt + durS + 3 });
     }
-    // Faint overtone an octave up for airiness.
-    const hi = ctx.createOscillator();
-    hi.type = 'sine';
-    hi.frequency.value = f * 2;
-    const hg = ctx.createGain();
-    const hamp = 0.03 / Math.sqrt(freqs.length);
-    hg.gain.setValueAtTime(0.0001, startAt);
-    hg.gain.exponentialRampToValueAtTime(hamp, startAt + CROSSFADE_S);
-    hg.gain.setValueAtTime(hamp, startAt + CHORD_S - 1);
-    hg.gain.exponentialRampToValueAtTime(0.0001, startAt + CHORD_S + 1);
-    hi.connect(hg).connect(ambientFilter);
-    hi.start(startAt);
-    hi.stop(startAt + CHORD_S + 3);
-    ambientVoices.add({ osc: hi, g: hg, stop: startAt + CHORD_S + 3 });
+    // Faint overtone an octave up for airiness, sometimes a fifth above that.
+    if (Math.random() < 0.75) {
+      const hi = ctx.createOscillator();
+      hi.type = 'sine';
+      hi.frequency.value = f * 2;
+      hi.detune.value = (Math.random() - 0.5) * 6;
+      const hg = ctx.createGain();
+      const hamp = (0.02 + Math.random() * 0.02) / Math.sqrt(freqs.length);
+      hg.gain.setValueAtTime(0.0001, startAt);
+      hg.gain.exponentialRampToValueAtTime(hamp, startAt + fadeS);
+      hg.gain.setValueAtTime(hamp, startAt + durS - 1);
+      hg.gain.exponentialRampToValueAtTime(0.0001, startAt + durS + 1);
+      hi.connect(hg).connect(ambientFilter);
+      hi.start(startAt);
+      hi.stop(startAt + durS + 3);
+      ambientVoices.add({ osc: hi, g: hg, stop: startAt + durS + 3 });
+    }
   }
 }
 
-// Advance the chord cycle forever while ambient is live and unmuted.
+// Advance the chord cycle forever while ambient is live and unmuted. The
+// progression is a weighted random walk: it favours staying in the same key
+// area (nearby palette entries) but occasionally wanders, and never repeats
+// the previous chord. Each chord gets its own duration and crossfade.
+function pickNextChord(prevIdx) {
+  const n = AMBIENT_CHORDS.length;
+  if (Math.random() < 0.6) {
+    // Stay near the previous chord: +/-1 step, wrapping.
+    const d = Math.random() < 0.5 ? 1 : n - 1;
+    return (prevIdx + d) % n;
+  }
+  // Wander somewhere else, but never straight back to the same chord.
+  let next = Math.floor(Math.random() * n);
+  if (next === prevIdx) next = (next + 1) % n;
+  return next;
+}
+
 function scheduleChord(idx, startAt) {
   if (!ambientEnabled) return;
-  spawnChord(AMBIENT_CHORDS[idx % AMBIENT_CHORDS.length], startAt);
-  const next = ctx.currentTime + (CHORD_S - CROSSFADE_S);
+  const durS = 18 + Math.random() * 14;          // 18-32s per chord
+  const fadeS = Math.min(6, durS * 0.16);        // longer crossfade for long chords
+  spawnChord(AMBIENT_CHORDS[idx % AMBIENT_CHORDS.length], startAt, durS, fadeS);
+  const next = ctx.currentTime + (durS - fadeS);
   const timer = setTimeout(
     () => {
       if (!ambientEnabled || muted) return; // chain pauses while muted
-      scheduleChord(idx + 1, Math.max(ctx.currentTime + 0.3, next));
+      scheduleChord(pickNextChord(idx), Math.max(ctx.currentTime + 0.3, next));
     },
-    (CHORD_S - CROSSFADE_S) * 1000
+    (durS - fadeS) * 1000
   );
   ambientTimers.push(timer);
 }
 
-// Sparse high sparkle bells, self-rescheduling.
+// Sparse high sparkle bells, self-rescheduling. Each one picks a note from
+// the two-octave pool, a random waveform (triangle is bell-like, sine is
+// glassy), a random volume/decay, and occasionally doubles an interval above
+// (octave or fifth) or a lower echo for depth.
 function scheduleSparkle() {
   if (!ambientEnabled) return;
-  const delay = 2500 + Math.random() * 5000;
+  const delay = 2000 + Math.random() * 6000;
   const timer = setTimeout(
     () => {
       if (!ambientEnabled || muted) return;
       const t = ctx.currentTime;
       const base = SPARKLE_NOTES[Math.floor(Math.random() * SPARKLE_NOTES.length)];
-      const interval = Math.random() < 0.35 ? 7 : 0;
-      for (const semi of [0, interval]) {
+      // Mostly a single bell; sometimes an interval, sometimes a soft echo.
+      const roll = Math.random();
+      const semi = roll < 0.22 ? 12 : roll < 0.4 ? 7 : 0; // octave / fifth / single
+      const wave = Math.random() < 0.7 ? 'triangle' : 'sine';
+      const vel = 0.05 + Math.random() * 0.07;
+      const decay = 3 + Math.random() * 3;
+      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+      if (pan) pan.pan.value = Math.random() * 1.2 - 0.6;
+      const play = (f, at, v) => {
         const osc = ctx.createOscillator();
-        osc.type = 'triangle';
-        osc.frequency.value = base * Math.pow(2, semi / 12);
+        osc.type = wave;
+        osc.frequency.value = f;
         const g = ctx.createGain();
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.09, t + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 4.5);
-        osc.connect(g).connect(ambientGain);
-        osc.start(t);
-        osc.stop(t + 5);
-        ambientVoices.add({ osc, g, stop: t + 5.2 });
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(v, at + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + decay);
+        osc.connect(g);
+        if (pan) g.connect(pan).connect(ambientGain);
+        else g.connect(ambientGain);
+        osc.start(at);
+        osc.stop(at + decay + 0.3);
+        ambientVoices.add({ osc, g, stop: at + decay + 0.5 });
+      };
+      play(base, t, vel);
+      if (semi) play(base * Math.pow(2, semi / 12), t + 0.03, vel * 0.7);
+      // A soft octave-down echo half a second later, one time in three.
+      if (Math.random() < 0.33) {
+        play(base / 2, t + 0.5, vel * 0.35);
       }
       scheduleSparkle();
     },
@@ -162,11 +231,20 @@ function scheduleSparkle() {
 function startBreathing() {
   if (!ctx || lfo) return;
   lfo = ctx.createOscillator();
-  lfo.frequency.value = 0.07; // ~14s cycle
+  lfo.frequency.value = 0.05 + Math.random() * 0.04; // 12-20s breath
   const lg = ctx.createGain();
-  lg.gain.value = 0.16;
+  lg.gain.value = 0.12 + Math.random() * 0.08;       // depth varies
   lfo.connect(lg).connect(ambientGain.gain);
   lfo.start();
+  // Let the breath wander: nudge the LFO rate and depth every ~25s so the
+  // swell never locks into one rigid cycle.
+  const wander = setInterval(() => {
+    if (!ambientEnabled || muted || !lfo) return;
+    const t = ctx.currentTime;
+    lfo.frequency.setTargetAtTime(0.05 + Math.random() * 0.04, t, 6);
+    lg.gain.setTargetAtTime(0.12 + Math.random() * 0.08, t, 6);
+  }, 25000);
+  ambientTimers.push(wander);
 }
 
 function stopBreathing() {
@@ -262,11 +340,12 @@ function getApi() {
       startBreathing();
       if (!ambientLive) {
         ambientLive = true;
-        spawnChord(AMBIENT_CHORDS[0], t + 0.5);
+        const startIdx = Math.floor(Math.random() * AMBIENT_CHORDS.length);
+        spawnChord(AMBIENT_CHORDS[startIdx], t + 0.5);
       }
       if (!chordArmed) {
         chordArmed = true;
-        scheduleChord(1, t + (CHORD_S - CROSSFADE_S) + 0.5);
+        scheduleChord(pickNextChord(Math.floor(Math.random() * AMBIENT_CHORDS.length)), t + 5 + Math.random() * 8);
       }
       if (!sparkArmed) {
         sparkArmed = true;
