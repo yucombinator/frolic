@@ -676,12 +676,12 @@ export function initRender(canvas) {
   for (let i = 0; i < MOTES; i++) {
     motePh.push({ ph: Math.random() * Math.PI * 2, sp: 0.4 + Math.random() * 0.8 });
     motePos[i * 3] = (Math.random() - 0.5) * 46;
-    motePos[i * 3 + 1] = 1 + Math.random() * 9;
-    motePos[i * 3 + 2] = (Math.random() - 0.5) * 56;
+    motePos[i * 3 + 1] = 3.5 + Math.random() * 7.5; // above the grass tops
+    motePos[i * 3 + 2] = Math.random() * 46 - 40;   // mostly ahead of the view
   }
   moteGeo.setAttribute('position', new THREE.BufferAttribute(motePos, 3));
   const moteMat = new THREE.PointsMaterial({
-    color: 0xfff3d6, size: 0.11, transparent: true, opacity: 0.4,
+    color: 0xfff3d6, size: 0.15, transparent: true, opacity: 0.5,
     depthWrite: false, sizeAttenuation: true,
   });
   const motes = new THREE.Points(moteGeo, moteMat);
@@ -711,7 +711,7 @@ export function initRender(canvas) {
     });
     b.add(new THREE.Mesh(makeWingGeo(-1), wMat)); // left wing
     b.add(new THREE.Mesh(makeWingGeo(1), wMat));  // right wing
-    b.scale.setScalar(0.9 + Math.random() * 0.5);
+    b.scale.setScalar(1.1 + Math.random() * 0.6);
     b.userData = {
       wl: b.children[1], wr: b.children[2],
       t: Math.random() * 100,
@@ -722,6 +722,29 @@ export function initRender(canvas) {
     };
     scene.add(b);
     butterflies.push(b);
+  }
+
+  // Pick a flower near the walker so butterflies stay in view — anchoring to
+  // random flowers anywhere in the band made them invisible most of the time.
+  function pickButterflyAnchor(playerPos) {
+    const near = [];
+    for (let i = 0; i < budData.length; i++) {
+      const f = budData[i];
+      if (!f) continue;
+      // Prefer flowers ahead of the walker so they stay in view as you advance.
+      if (f.z < playerPos.z + 2 && Math.hypot(f.x - playerPos.x, f.z - playerPos.z) < 26) near.push(f);
+    }
+    if (!near.length) {
+      for (let i = 0; i < budData.length; i++) {
+        const f = budData[i];
+        if (f && Math.hypot(f.x - playerPos.x, f.z - playerPos.z) < 26) near.push(f);
+      }
+    }
+    if (near.length) {
+      const f = near[Math.floor(Math.random() * near.length)];
+      return { x: f.x, y: HILLS.height(f.x, f.z) + CROWN_LIFT, z: f.z };
+    }
+    return { x: playerPos.x + (Math.random() - 0.5) * 8, y: playerPos.y + 1, z: playerPos.z - 8 };
   }
 
   // Birds: a tiny flock of V silhouettes that occasionally crosses the sky.
@@ -838,10 +861,10 @@ export function initRender(canvas) {
           mpos[o + 2] += 0.3 * dt;
           if (mpos[o] > 23) mpos[o] = -23;
           else if (mpos[o] < -23) mpos[o] = 23;
-          if (mpos[o + 1] > 10) mpos[o + 1] = 1;
-          else if (mpos[o + 1] < 1) mpos[o + 1] = 10;
-          if (mpos[o + 2] > 28) mpos[o + 2] = -28;
-          else if (mpos[o + 2] < -28) mpos[o + 2] = 28;
+          if (mpos[o + 1] > 11) mpos[o + 1] = 3.5;
+          else if (mpos[o + 1] < 3.5) mpos[o + 1] = 11;
+          if (mpos[o + 2] > 6) mpos[o + 2] = -40;
+          else if (mpos[o + 2] < -40) mpos[o + 2] = 6;
         }
         moteGeo.attributes.position.needsUpdate = true;
       }
@@ -853,13 +876,8 @@ export function initRender(canvas) {
         u.t += dt * u.speed;
         u.anchorT -= dt;
         if (!u.anchor || u.anchorT <= 0) {
-          if (budData.length) {
-            const f = budData[Math.floor(Math.random() * budData.length)];
-            u.anchor = { x: f.x, y: HILLS.height(f.x, f.z) + CROWN_LIFT, z: f.z };
-          } else {
-            u.anchor = { x: playerPos.x + (Math.random() - 0.5) * 10, y: playerPos.y, z: playerPos.z - 10 };
-          }
-          u.anchorT = 6 + Math.random() * 10;
+          u.anchor = pickButterflyAnchor(playerPos);
+          u.anchorT = 5 + Math.random() * 8;
         }
         const a = u.t * 1.2;
         b.position.set(
