@@ -1,3 +1,7 @@
+// The layered grass field (near/mid/far tiers), wind, and the trampled-path
+// wake. Grass system originally by Wintermelons
+// (https://github.com/wintermelons) — adapted and extended here.
+
 import * as THREE from 'three';
 import { mulberry32 } from './rand.js';
 

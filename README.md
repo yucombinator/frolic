@@ -45,7 +45,7 @@ No build step. Three.js is loaded from unpkg via an importmap.
 | `src/walk.js` | Pure walking kinematics (unit-tested): steer, walk/jog speed, eye height, stride count |
 | `src/world.js` | Deterministic flower scatter — 200 m z-chunks, stable per seed, seamless streaming |
 | `src/render.js` | Scene: infinite terrain, grass meadow, sky, clouds, flower crowns + leafy stems, first-person camera, grass wake, **the Rocky mountain range + lakes, drag-look, pollen motes, butterflies, birds** |
-| `src/grass.js` | The layered grass field (near/mid/far tiers), wind, and the trampled-path wake |
+| `src/grass.js` | The layered grass field (near/mid/far tiers), wind, and the trampled-path wake (grass system by [Wintermelons](https://github.com/wintermelons), adapted) |
 | `src/hill.js` | Deterministic rolling-hill terrain shared by renderer and logic |
 | `src/audio.js` | Synthesized ambience: wind pad, wandering birdsong, stride-synced footsteps |
 
@@ -74,6 +74,15 @@ node --test test/*.test.js
 
 Covers walking kinematics (steering, speeds, terrain clamp, bob cadence) and
 meadow generation (determinism, bounds, kinds) — pure modules only, no browser.
+
+## Credits
+
+- **Grass system** — [Wintermelons](https://github.com/wintermelons) on GitHub.
+  The layered grass field, wind, and trampled-path wake are adapted from their
+  work (see `src/grass.js`).
+- Built as a grounded reimagining of
+  [Petal Bloom](https://github.com/NARBEHOUSE/Narbehouse.github.io), whose
+  rendering core this project builds on.
 
 ## Accessibility
 
