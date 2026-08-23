@@ -360,9 +360,17 @@ const KIND_SCALE = [1.0, 1.05, 0.92, 1.1];
 function buildMountainRange() {
   const pos = [];
   const col = [];
+  const meta = [];
   const clamp = THREE.MathUtils.clamp;
-  const HAZE = [0.78, 0.90, 1.0];
-  const push = (x, y, z, r, g, b) => { pos.push(x, y, z); col.push(r, g, b); };
+  // Per-vertex: chain metadata packed for the shader as a vec4 —
+  // (snowLine, green, tint, 0). Constant within a chain, so the fragment
+  // shader can derive rock/snow/strata from continuous local-space fields
+  // instead of per-quad vertex colours.
+  const push = (x, y, z, r, g, b, m) => {
+    pos.push(x, y, z);
+    col.push(r, g, b);
+    meta.push(m[0], m[1], m[2], 0);
+  };
 
   // 1D value noise (hash lattice + smoothstep) — the base for ridged noise.
   function vnoise(x, seed) {
@@ -407,12 +415,6 @@ function buildMountainRange() {
     return Math.max(4, env * (0.60 + 1.05 * Math.pow(r, 1.15)));
   }
 
-  const hazed = (c, k) => [
-    c[0] + (HAZE[0] - c[0]) * k,
-    c[1] + (HAZE[1] - c[1]) * k,
-    c[2] + (HAZE[2] - c[2]) * k,
-  ];
-
   // One ridgeline: front and back faces fan from the crest down to the plain.
   function ridgeChain(o) {
     const n = o.n;
@@ -426,57 +428,35 @@ function buildMountainRange() {
       const h = profile(a, o.peaks, o.seed) * taper;
       pts.push({ a, r, h });
     }
-    // Per-point colours: crest (rock -> snow), front base (rock), back base (shade).
-    const crestC = (h) => {
-      if (o.green) {
-        const t = clamp(h / o.maxH, 0, 1);
-        return [(0.34 + 0.20 * t) * o.tint, (0.40 + 0.20 * t) * o.tint, (0.26 + 0.14 * t) * o.tint];
-      }
-      const sn = clamp((h - o.snowLine) / o.snowBand, 0, 1);
-      return [
-        (o.rock[0] + (o.snow[0] - o.rock[0]) * sn) * o.tint,
-        (o.rock[1] + (o.snow[1] - o.rock[1]) * sn) * o.tint,
-        (o.rock[2] + (o.snow[2] - o.rock[2]) * sn) * o.tint,
-      ];
-    };
+    // Per-chain base colour (rock or pine). Every vertex of the chain shares
+    // one colour — all texture variation is computed in the fragment shader
+    // from continuous local-space fields, so there is nothing for adjacent
+    // quads to step between. This kills the vertical banding the per-vertex
+    // snow ramp produced.
+    const base = o.green ? [0.42, 0.49, 0.34] : [o.rock[0], o.rock[1], o.rock[2]];
+    // Metadata for the shader: (snowLine, green, tint). snowLine 999 = no snow.
+    const chainMeta = [o.snowLine, o.green ? 1 : 0, o.tint];
     const F = [], C = [], B = [];
-    const cF = [], cC = [], cB = [];
-    // Smooth the height profile used for colouring. The crest GEOMETRY stays
-    // jagged (that is the silhouette), but per-vertex colour from the raw
-    // jagged heights flips snow/rock between neighbouring quads and reads as
-    // vertical stripes; a small box blur keeps the snowline continuous along
-    // the ridge so the facets shade smoothly.
-    const hs = pts.map((p, i) => {
-      const a = pts[Math.max(0, i - 1)].h;
-      const b = pts[i].h;
-      const c = pts[Math.min(pts.length - 1, i + 1)].h;
-      return (a + b * 2 + c) / 4;
-    });
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i];
       const sa = Math.sin(p.a), ca = Math.cos(p.a);
       C.push([p.r * sa, p.h, -p.r * ca]);
       F.push([(p.r - o.front) * sa, o.baseY, -(p.r - o.front) * ca]);
       B.push([(p.r + o.back) * sa, o.baseY - 1, -(p.r + o.back) * ca]);
-      cC.push(hazed(crestC(hs[i]), 0.10 * (1 - clamp(hs[i] / 120, 0, 1))));
-      const rock = o.green ? [0.30, 0.36, 0.24] : [o.rock[0] * 0.86, o.rock[1] * 0.86, o.rock[2] * 0.86];
-      const dark = o.green ? [0.21, 0.26, 0.16] : [o.rockDark[0], o.rockDark[1], o.rockDark[2]];
-      cF.push(hazed(rock, 0.5));
-      cB.push(hazed(dark, 0.55));
     }
     for (let i = 0; i < n - 1; i++) {
       const j = i + 1;
-      const tri = (v1, c1, v2, c2, v3, c3) => {
-        push(v1[0], v1[1], v1[2], c1[0], c1[1], c1[2]);
-        push(v2[0], v2[1], v2[2], c2[0], c2[1], c2[2]);
-        push(v3[0], v3[1], v3[2], c3[0], c3[1], c3[2]);
+      const tri = (v1, v2, v3) => {
+        push(v1[0], v1[1], v1[2], base[0], base[1], base[2], chainMeta);
+        push(v2[0], v2[1], v2[2], base[0], base[1], base[2], chainMeta);
+        push(v3[0], v3[1], v3[2], base[0], base[1], base[2], chainMeta);
       };
       // front face (camera side)
-      tri(F[i], cF[i], C[i], cC[i], F[j], cF[j]);
-      tri(C[i], cC[i], C[j], cC[j], F[j], cF[j]);
+      tri(F[i], C[i], F[j]);
+      tri(C[i], C[j], F[j]);
       // back face (shadow side)
-      tri(C[i], cC[i], B[i], cB[i], C[j], cC[j]);
-      tri(B[i], cB[i], B[j], cB[j], C[j], cC[j]);
+      tri(C[i], B[i], C[j]);
+      tri(B[i], B[j], C[j]);
     }
   }
 
@@ -555,6 +535,7 @@ function buildMountainRange() {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setAttribute('aMeta', new THREE.Float32BufferAttribute(meta, 4));
   geo.computeVertexNormals();
 
   // Procedural rock texturing in the fragment shader. Flat vertex colors read
@@ -567,21 +548,27 @@ function buildMountainRange() {
     fog: false,
     vertexColors: true,
     vertexShader: `
-      varying vec3 vWorld;
-      varying vec3 vColor;
+      // Local-space position and per-chain metadata. All texture variation
+      // is computed from these continuous fields in the fragment shader, so
+      // there is no per-vertex colour stepping between quads.
+      attribute vec4 aMeta; // custom — three r160 does not inject it
+      varying vec3 vLocal;
       varying vec3 vNormal;
+      varying vec4 vMeta;
+      varying vec3 vColor;
       void main() {
-        vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
-        vColor = color;
+        vLocal = position;
         vNormal = normalize(normalMatrix * normal);
+        vMeta = aMeta;
+        vColor = color;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
     fragmentShader: `
       precision highp float;
-      varying vec3 vWorld;
-      varying vec3 vColor;
+      varying vec3 vLocal;
       varying vec3 vNormal;
+      varying vec4 vMeta;
 
       float hash(vec3 p) {
         p = fract(p * 0.3183099 + 0.1);
@@ -615,40 +602,56 @@ function buildMountainRange() {
         vec3 N = normalize(vNormal);
         if (!gl_FrontFacing) N = -N;
 
-        vec3 col = vColor;
-        float n1 = fbm(vWorld * 0.12);  // broad structure
-        float n2 = fbm(vWorld * 0.45);  // mid detail
-        float n3 = fbm(vWorld * 1.40);  // fine grain
-
-        // Perturb the normal with fine noise so adjacent flat facets do not
-        // each get one uniform sun step (which reads as vertical stripes).
+        // Gentle low-frequency bump: varies sun lighting within a facet
+        // without the speckle a strong high-frequency bump produced.
         vec3 bump = vec3(
-          vnoise(vWorld * 2.2 + 5.0) - 0.5,
-          vnoise(vWorld * 2.2 + 9.0) - 0.5,
-          vnoise(vWorld * 2.2 + 13.0) - 0.5);
-        N = normalize(N + bump * 0.6);
+          vnoise(vLocal * 0.8 + 5.0) - 0.5,
+          vnoise(vLocal * 0.8 + 9.0) - 0.5,
+          vnoise(vLocal * 0.8 + 13.0) - 0.5);
+        N = normalize(N + bump * 0.22);
 
-        // Where the baked colour is bright, treat as snow and keep it clean;
-        // elsewhere the rock gets grain, scree and strata.
-        float lum = dot(col, vec3(0.299, 0.587, 0.114));
-        float snowMask = smoothstep(0.62, 0.82, lum);
+        float snowLine = vMeta.x;
+        float green = vMeta.y;
+        float tint = vMeta.z;
+
+        // Rock/pine base — gray-blue rock or pine green, brightened with height.
+        // (Constant per chain; all detail comes from the noise fields below.)
+        vec3 rockBase = vec3(0.54, 0.58, 0.66);
+        vec3 col = rockBase * (0.75 + 0.35 * clamp(vLocal.y / 70.0, 0.0, 1.0));
+        if (green > 0.5) {
+          col = mix(vec3(0.30, 0.36, 0.24), vec3(0.46, 0.52, 0.36), clamp(vLocal.y / 30.0, 0.0, 1.0));
+        }
+        col *= tint;
+
+        // Continuous noise fields in LOCAL space — glued to the geometry,
+        // so no world-position swimming as the walker moves.
+        float n1 = fbm(vLocal * 0.10);  // broad structure
+        float n2 = fbm(vLocal * 0.40);  // mid detail
+        float n3 = fbm(vLocal * 1.30);  // fine grain
+
+        // Snow from local height + noise-displaced snowline: ragged but
+        // continuous along the ridge (no per-quad banding).
+        float snow = 0.0;
+        if (snowLine < 900.0) {
+          float line = snowLine + (n1 - 0.5) * 14.0;
+          snow = smoothstep(line, line + 12.0, vLocal.y);
+        }
+        snow *= 1.0 - green;
 
         // Rock grain.
-        col *= 0.90 + 0.20 * n3;
+        col *= 0.93 + 0.14 * n3 * (1.0 - snow);
 
         // Scree: loose darker talus on steep faces, absent under snow.
         float slope = 1.0 - clamp(N.y, 0.0, 1.0);
         vec3 screeCol = mix(vec3(0.55, 0.53, 0.50), vec3(0.38, 0.36, 0.34), n2);
-        col = mix(col, screeCol, smoothstep(0.30, 0.60, slope) * (1.0 - snowMask) * 0.45);
+        col = mix(col, screeCol, smoothstep(0.30, 0.60, slope) * (1.0 - snow) * 0.45);
 
         // Strata banding along the height axis, gently broken by noise.
-        float band = sin(vWorld.y * 0.7 + n1 * 5.0) * 0.5 + 0.5;
-        col *= 0.93 + 0.12 * band * (1.0 - snowMask);
+        float band = sin(vLocal.y * 0.6 + n1 * 5.0) * 0.5 + 0.5;
+        col *= 0.94 + 0.10 * band * (1.0 - snow);
 
-        // Ragged snowline: brighten the baked snow transition with noise so
-        // the cap edge is patchy, not a clean horizontal band.
-        float edge = smoothstep(0.30, 0.62, snowMask * (0.5 + n1) - 0.08 + n2 * 0.25);
-        col = mix(col, vec3(0.96, 0.975, 1.0), edge * 0.35 * (0.4 + 0.6 * n2));
+        // Snow brightening (only where the chain allows snow).
+        col = mix(col, vec3(0.96, 0.975, 1.0) * tint, snow);
 
         // Lighting: hemisphere + sun + rim, matching the scene constants.
         vec3 skyC = vec3(0.81, 0.91, 1.00) * 0.95;
