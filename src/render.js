@@ -697,9 +697,10 @@ function buildMountainRange() {
 }
 
 // Occasional distant lakes — flat blue water in the valleys ahead of the
-// range, grounded on the terrain. Randomized in count (0-2), size, and
-// position every session so the plains don't always look the same. Tracked
-// with the camera like the mountains so they stay in the distance.
+// range, grounded on the terrain at their world position. Randomized in
+// count (0-2), size, and position every session. Depth-tested like normal
+// geometry (a hill in front correctly occludes them), and placed only where
+// the camera-to-lake sight line clears the intervening terrain.
 function buildLakes() {
   const count = Math.random() < 0.6 ? 1 + Math.floor(Math.random() * 2) : 0;
   if (!count) return null;
@@ -708,48 +709,54 @@ function buildLakes() {
   const index = [];
   const lakeMat = new THREE.MeshBasicMaterial({
     color: 0x3f7fb5, transparent: true, opacity: 0.85, fog: false, side: THREE.DoubleSide,
-    depthTest: false, // far decorative water: always visible over the terrain
   });
+  const camY = HILLS.height(0, 0) + EYE_HEIGHT; // walker starts near origin
   for (let l = 0; l < count; l++) {
-    // Try candidate spots until one sits in a terrain depression (so the
-    // shoreline reads as a real lake, not a blue disc draped on a hill),
-    // and the line of sight to the camera is not blocked by a nearer ridge.
-    let cx = 0, cz = 0, ground = -10, w = 30, d = 30, ok = false;
-    for (let attempt = 0; attempt < 10 && !ok; attempt++) {
+    let cx = 0, cz = 0, ground = -10, lakeW = 30, lakeD = 30, ok = false;
+    for (let attempt = 0; attempt < 14 && !ok; attempt++) {
       const side = Math.random() < 0.5 ? -1 : 1;
       const a = side * (0.3 + Math.random() * 0.6);        // 0.3-0.9 rad off center
-      const r = 140 + Math.random() * 70;                  // 140-210 out (closer: less ridge occlusion)
+      const r = 140 + Math.random() * 70;                  // 140-210 out
       cx = Math.sin(a) * r;
       cz = -Math.cos(a) * r;
       ground = HILLS.height(cx, cz);
-      const n = 6; // samples around the candidate
-      let sum = 0;
-      for (let i = 0; i < n; i++) {
-        const t = (i / n) * Math.PI * 2;
-        sum += HILLS.height(cx + Math.cos(t) * 30, cz + Math.sin(t) * 30);
+      // Sight-line check: sample the ray from the camera to the lake centre;
+      // reject if any intervening terrain pokes above it.
+      const lakeY = ground + 0.6;
+      const steps = 12;
+      ok = true;
+      for (let s = 1; s < steps; s++) {
+        const t = s / steps;
+        const px = cx * t, pz = cz * t;
+        const rayY = camY + (lakeY - camY) * t;
+        if (HILLS.height(px, pz) > rayY - 0.3) { ok = false; break; }
       }
-      const rim = sum / n;
-      // Depression: centre below its rim so the shoreline reads as a lake.
-      // The hills are mostly convex, so accept a modest dip and let the
-      // closer placement + slight lift clear intervening ridges.
-      ok = rim - ground > 0.35;
+      // Depression: the shoreline should read as a lake bed, not a hilltop.
+      if (ok) {
+        const n = 6;
+        let sum = 0;
+        for (let i = 0; i < n; i++) {
+          const tt = (i / n) * Math.PI * 2;
+          sum += HILLS.height(cx + Math.cos(tt) * 25, cz + Math.sin(tt) * 25);
+        }
+        ok = sum / n - ground > 0.25;
+      }
     }
     if (!ok) continue;
-    const lakeW = 26 + Math.random() * 34;                 // lake width
-    const lakeD = lakeW * (0.5 + Math.random() * 0.7);     // depth (ellipse)
+    lakeW = 26 + Math.random() * 34;                       // lake width
+    lakeD = lakeW * (0.5 + Math.random() * 0.7);           // depth (ellipse)
     const seg = 14;
     const v0 = pos.length / 3;
     for (let i = 0; i < seg; i++) {
       const t = (i / seg) * Math.PI * 2;
-      const x = cx + Math.cos(t) * lakeW * 0.5;
-      const z = cz + Math.sin(t) * lakeD * 0.5;
-      pos.push(x, ground + 0.6, z); // above the terrain: avoids z-fight and near-ridge occlusion
+      pos.push(cx + Math.cos(t) * lakeW * 0.5, ground + 0.6, cz + Math.sin(t) * lakeD * 0.5);
       col.push(1, 1, 1);
     }
     for (let i = 1; i < seg - 1; i++) {
       index.push(v0, v0 + i, v0 + i + 1);
     }
   }
+  if (pos.length === 0) return null;
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -1272,8 +1279,6 @@ export function initRender(canvas) {
       // Mountains sit on the horizon — follow the walker so the range stays
       // put in the distance while the plains scroll by.
       mountains.position.set(camera.position.x, 0, camera.position.z);
-      // Lakes ride along in the valleys ahead, same frame as the range.
-      if (lakes) lakes.position.set(camera.position.x, 0, camera.position.z);
 
       // Pollen motes drift on the wind inside a box that follows the camera.
       motes.position.copy(camera.position);
