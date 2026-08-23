@@ -667,6 +667,88 @@ export function initRender(canvas) {
     clouds.push(c);
   }
 
+  // Drifting pollen / seed motes: a soft haze of tiny specks floating on the
+  // wind inside a box that follows the camera.
+  const MOTES = 220;
+  const moteGeo = new THREE.BufferGeometry();
+  const motePos = new Float32Array(MOTES * 3);
+  const motePh = [];
+  for (let i = 0; i < MOTES; i++) {
+    motePh.push({ ph: Math.random() * Math.PI * 2, sp: 0.4 + Math.random() * 0.8 });
+    motePos[i * 3] = (Math.random() - 0.5) * 46;
+    motePos[i * 3 + 1] = 1 + Math.random() * 9;
+    motePos[i * 3 + 2] = (Math.random() - 0.5) * 56;
+  }
+  moteGeo.setAttribute('position', new THREE.BufferAttribute(motePos, 3));
+  const moteMat = new THREE.PointsMaterial({
+    color: 0xfff3d6, size: 0.11, transparent: true, opacity: 0.4,
+    depthWrite: false, sizeAttenuation: true,
+  });
+  const motes = new THREE.Points(moteGeo, moteMat);
+  motes.frustumCulled = false;
+  scene.add(motes);
+
+  // Butterflies: a few papery wings fluttering around the flowers.
+  const butterflies = [];
+  function makeWingGeo(side) {
+    const g = new THREE.PlaneGeometry(0.17, 0.11, 1, 1);
+    g.rotateX(-Math.PI / 2); // horizontal, normal +y
+    g.translate(side * 0.085, 0, 0); // pivot on the body axis
+    return g;
+  }
+  const BUTTERFLY_COLORS = [0xffd9e8, 0xfff2b0, 0xdcc8ff, 0xb3e1ff, 0xffc9a8];
+  for (let i = 0; i < 5; i++) {
+    const b = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.014, 0.02, 0.11, 5),
+      new THREE.MeshBasicMaterial({ color: 0x3a2a1a })
+    );
+    body.rotation.x = Math.PI / 2; // lie along z (flight direction)
+    b.add(body);
+    const wMat = new THREE.MeshBasicMaterial({
+      color: BUTTERFLY_COLORS[i % BUTTERFLY_COLORS.length],
+      side: THREE.DoubleSide, transparent: true, opacity: 0.85,
+    });
+    b.add(new THREE.Mesh(makeWingGeo(-1), wMat)); // left wing
+    b.add(new THREE.Mesh(makeWingGeo(1), wMat));  // right wing
+    b.scale.setScalar(0.9 + Math.random() * 0.5);
+    b.userData = {
+      wl: b.children[1], wr: b.children[2],
+      t: Math.random() * 100,
+      speed: 0.55 + Math.random() * 0.7,
+      radius: 1.6 + Math.random() * 2.2,
+      anchor: null,
+      anchorT: 0,
+    };
+    scene.add(b);
+    butterflies.push(b);
+  }
+
+  // Birds: a tiny flock of V silhouettes that occasionally crosses the sky.
+  const BIRD_N = 5;
+  const birdMat = new THREE.MeshBasicMaterial({
+    color: 0x3a3a46, side: THREE.DoubleSide, transparent: true, opacity: 0.85,
+  });
+  const flock = new THREE.Group();
+  for (let i = 0; i < BIRD_N; i++) {
+    const bird = new THREE.Group();
+    const v1 = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.14), birdMat);
+    v1.rotation.z = 0.5;
+    v1.position.set(-0.27, 0, 0);
+    const v2 = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.14), birdMat);
+    v2.rotation.z = -0.5;
+    v2.position.set(0.27, 0, 0);
+    bird.add(v1, v2);
+    bird.position.x = i * 3.4;
+    bird.userData = { v1, v2, ph: Math.random() * Math.PI * 2 };
+    flock.add(bird);
+  }
+  flock.visible = false;
+  flock.userData.t = 10 + Math.random() * 15; // countdown to the first pass
+  scene.add(flock);
+
+  let lastHeading = 0; // for the lean-into-turns roll
+
   const api = {
     scene,
     camera,
@@ -674,13 +756,22 @@ export function initRender(canvas) {
     setFlowers(flowers) {
       scaleBuds(flowers);
     },
-    frame(dt, playerPos, heading, jogLevel, timeSec) {
+    frame(dt, playerPos, heading, jogLevel, timeSec, lookYaw = 0, lookPitch = 0) {
       // First-person: the camera IS the player. playerPos.y already includes
       // the eye height + head-bob from main.js; the foot position for the
       // grass wake sits at ground level.
       camera.position.set(playerPos.x, playerPos.y, playerPos.z);
       camera.rotation.order = 'YXZ';
-      camera.rotation.set(-0.06, heading, 0);
+      // Lean subtly into turns and breathe the FOV out a touch when jogging.
+      const dHeading = heading - lastHeading;
+      lastHeading = heading;
+      const lean = Math.max(-0.12, Math.min(0.12, dHeading * 2.6));
+      camera.rotation.set(-0.06 + lookPitch, heading + lookYaw, -lean);
+      const targetFov = 72 + jogLevel * 4;
+      if (Math.abs(camera.fov - targetFov) > 0.05) {
+        camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3);
+        camera.updateProjectionMatrix();
+      }
 
       const footPos = { x: playerPos.x, y: playerPos.y - EYE_HEIGHT, z: playerPos.z };
       grass.update(timeSec, footPos, 0, windAt(timeSec, 11), camera.position, null);
@@ -732,6 +823,80 @@ export function initRender(canvas) {
         c.position.x += c.userData.speed * dt;
         if (c.position.x > 190) c.position.x = -190;
         c.position.z = camera.position.z + c.userData.zo;
+      }
+
+      // Pollen motes drift on the wind inside a box that follows the camera.
+      motes.position.copy(camera.position);
+      {
+        const mpos = moteGeo.attributes.position.array;
+        const windX = windAt(timeSec, 11).swayVx * 0.4 + 0.25;
+        for (let i = 0; i < MOTES; i++) {
+          const ph = motePh[i];
+          const o = i * 3;
+          mpos[o] += windX * dt + Math.sin(timeSec * ph.sp + ph.ph) * 0.05 * dt;
+          mpos[o + 1] += Math.sin(timeSec * ph.sp * 1.3 + ph.ph) * 0.06 * dt;
+          mpos[o + 2] += 0.3 * dt;
+          if (mpos[o] > 23) mpos[o] = -23;
+          else if (mpos[o] < -23) mpos[o] = 23;
+          if (mpos[o + 1] > 10) mpos[o + 1] = 1;
+          else if (mpos[o + 1] < 1) mpos[o + 1] = 10;
+          if (mpos[o + 2] > 28) mpos[o + 2] = -28;
+          else if (mpos[o + 2] < -28) mpos[o + 2] = 28;
+        }
+        moteGeo.attributes.position.needsUpdate = true;
+      }
+
+      // Butterflies flutter around a nearby flower, re-anchoring now and then.
+      for (let i = 0; i < butterflies.length; i++) {
+        const b = butterflies[i];
+        const u = b.userData;
+        u.t += dt * u.speed;
+        u.anchorT -= dt;
+        if (!u.anchor || u.anchorT <= 0) {
+          if (budData.length) {
+            const f = budData[Math.floor(Math.random() * budData.length)];
+            u.anchor = { x: f.x, y: HILLS.height(f.x, f.z) + CROWN_LIFT, z: f.z };
+          } else {
+            u.anchor = { x: playerPos.x + (Math.random() - 0.5) * 10, y: playerPos.y, z: playerPos.z - 10 };
+          }
+          u.anchorT = 6 + Math.random() * 10;
+        }
+        const a = u.t * 1.2;
+        b.position.set(
+          u.anchor.x + Math.sin(a) * u.radius,
+          u.anchor.y + 1.2 + Math.sin(u.t * 1.7) * 0.9,
+          u.anchor.z + Math.cos(a * 0.93) * u.radius
+        );
+        b.rotation.y = Math.sin(u.t * 0.9) * 0.7;
+        const flap = Math.sin(u.t * 14) * 0.75 * (0.4 + 0.6 * (0.5 + 0.5 * Math.sin(u.t * 2.1)));
+        u.wl.rotation.z = flap;
+        u.wr.rotation.z = -flap;
+      }
+
+      // Birds: an occasional flock crosses the sky, then disappears.
+      {
+        const f = flock.userData;
+        f.t -= dt;
+        if (f.t <= 0) {
+          if (!flock.visible) {
+            flock.visible = true;
+            flock.position.set(camera.position.x + 120, 72 + Math.random() * 18, camera.position.z - 60);
+            f.dir = Math.random() < 0.5 ? 1 : -1;
+            f.speed = 6 + Math.random() * 4;
+          }
+          flock.position.x += f.dir * f.speed * dt;
+          flock.position.z += 1.2 * dt;
+          for (const bird of flock.children) {
+            bird.userData.ph += dt * 9;
+            const flap = Math.sin(bird.userData.ph) * 0.45;
+            bird.userData.v1.rotation.y = flap;
+            bird.userData.v2.rotation.y = -flap;
+          }
+          if (Math.abs(flock.position.x - camera.position.x) > 220) {
+            flock.visible = false;
+            f.t = 18 + Math.random() * 30;
+          }
+        }
       }
 
       // Draw the frame. (The original main.js issued renderer.render itself;

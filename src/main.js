@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { initRender, resize } from './render.js?v=4';
+import { initRender, resize } from './render.js?v=5';
 import { advanceWalk } from './walk.js?v=2';
 import { generateFlowers } from './world.js?v=1';
 import { HILLS } from './hill.js?v=1';
-import { initAudio } from './audio.js?v=1';
+import { initAudio } from './audio.js?v=2';
 
 const canvasWrap = document.getElementById('game');
 const canvas = document.createElement('canvas');
@@ -68,6 +68,25 @@ window.addEventListener('keyup', (e) => {
   if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') input.left = false;
   if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') input.right = false;
 });
+
+// Optional look-around: drag the meadow to look anywhere. Purely a view
+// offset — it never steers the walker, so the two-key floor stays intact.
+let lookYaw = 0;
+let lookPitch = 0;
+let lookDrag = null;
+canvas.addEventListener('pointerdown', (e) => {
+  lookDrag = { x: e.clientX, y: e.clientY };
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* pointer capture optional */ }
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!lookDrag) return;
+  lookYaw += (e.clientX - lookDrag.x) * 0.004;
+  lookPitch += (e.clientY - lookDrag.y) * 0.003;
+  lookPitch = Math.max(-0.9, Math.min(0.9, lookPitch)); // look up/down, not over
+  lookDrag = { x: e.clientX, y: e.clientY };
+});
+canvas.addEventListener('pointerup', () => { lookDrag = null; });
+canvas.addEventListener('pointercancel', () => { lookDrag = null; });
 
 // --- World: deterministic flower chunks streaming ahead of the walker ---
 // Each 200m z-chunk is generated from a stable seed, so the meadow is
@@ -167,7 +186,7 @@ const tick = () => {
   player = { x: s.x, z: s.z, heading: s.heading, bobPhase: s.bobPhase };
   if (s.stride > 0) audio?.footstep(s.stride); // one crunch per step
   if (chunkOf(player.z) !== currentChunk) refreshFlowers();
-  render.frame(dt, { x: s.x, y: s.y, z: s.z }, s.heading, input.jog ? 1 : 0, clock.elapsedTime);
+  render.frame(dt, { x: s.x, y: s.y, z: s.z }, s.heading, input.jog ? 1 : 0, clock.elapsedTime, lookYaw, lookPitch);
 };
 tick();
 

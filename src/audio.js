@@ -328,10 +328,11 @@ function getApi() {
       for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
       src.buffer = buf;
       const gain = ctx.createGain();
-      gain.gain.value = stride > 1 ? 0.5 : 0.34;
+      // Organic jitter so every step sounds slightly different.
+      gain.gain.value = (stride > 1 ? 0.5 : 0.34) * (0.85 + Math.random() * 0.3);
       const filt = ctx.createBiquadFilter();
       filt.type = 'lowpass';
-      filt.frequency.value = 900;
+      filt.frequency.value = 700 + Math.random() * 400;
       src.connect(filt).connect(gain).connect(master);
       src.start(t);
     },
