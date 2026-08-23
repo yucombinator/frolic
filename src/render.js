@@ -441,12 +441,24 @@ function buildMountainRange() {
     };
     const F = [], C = [], B = [];
     const cF = [], cC = [], cB = [];
-    for (const p of pts) {
+    // Smooth the height profile used for colouring. The crest GEOMETRY stays
+    // jagged (that is the silhouette), but per-vertex colour from the raw
+    // jagged heights flips snow/rock between neighbouring quads and reads as
+    // vertical stripes; a small box blur keeps the snowline continuous along
+    // the ridge so the facets shade smoothly.
+    const hs = pts.map((p, i) => {
+      const a = pts[Math.max(0, i - 1)].h;
+      const b = pts[i].h;
+      const c = pts[Math.min(pts.length - 1, i + 1)].h;
+      return (a + b * 2 + c) / 4;
+    });
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
       const sa = Math.sin(p.a), ca = Math.cos(p.a);
       C.push([p.r * sa, p.h, -p.r * ca]);
       F.push([(p.r - o.front) * sa, o.baseY, -(p.r - o.front) * ca]);
       B.push([(p.r + o.back) * sa, o.baseY - 1, -(p.r + o.back) * ca]);
-      cC.push(hazed(crestC(p.h), 0.10 * (1 - clamp(p.h / 120, 0, 1))));
+      cC.push(hazed(crestC(hs[i]), 0.10 * (1 - clamp(hs[i] / 120, 0, 1))));
       const rock = o.green ? [0.30, 0.36, 0.24] : [o.rock[0] * 0.86, o.rock[1] * 0.86, o.rock[2] * 0.86];
       const dark = o.green ? [0.21, 0.26, 0.16] : [o.rockDark[0], o.rockDark[1], o.rockDark[2]];
       cF.push(hazed(rock, 0.5));
@@ -607,6 +619,14 @@ function buildMountainRange() {
         float n1 = fbm(vWorld * 0.12);  // broad structure
         float n2 = fbm(vWorld * 0.45);  // mid detail
         float n3 = fbm(vWorld * 1.40);  // fine grain
+
+        // Perturb the normal with fine noise so adjacent flat facets do not
+        // each get one uniform sun step (which reads as vertical stripes).
+        vec3 bump = vec3(
+          vnoise(vWorld * 2.2 + 5.0) - 0.5,
+          vnoise(vWorld * 2.2 + 9.0) - 0.5,
+          vnoise(vWorld * 2.2 + 13.0) - 0.5);
+        N = normalize(N + bump * 0.6);
 
         // Where the baked colour is bright, treat as snow and keep it clean;
         // elsewhere the rock gets grain, scree and strata.
