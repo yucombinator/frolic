@@ -364,15 +364,47 @@ function buildMountainRange() {
   const HAZE = [0.78, 0.90, 1.0];
   const push = (x, y, z, r, g, b) => { pos.push(x, y, z); col.push(r, g, b); };
 
-  // Smooth height noise along the ridge angle: gaussian massifs + mid-scale
-  // undulation + fine crest jitter. Layered so peaks cluster into massifs
-  // separated by deep saddles — a believable skyline, not uniform spikes.
-  function profile(a, peaks, midAmp, fineAmp, seed) {
-    let h = 0;
-    for (const p of peaks) h += p.h * Math.exp(-((a - p.a) ** 2) / (2 * p.w * p.w));
-    h += midAmp * Math.sin(a * 2.1 + seed * 1.7) * Math.cos(a * 1.3 + seed * 0.6);
-    h += fineAmp * Math.sin(a * 6.3 + seed * 3.1) * Math.cos(a * 4.1 + seed * 1.9);
-    return Math.max(4, h);
+  // 1D value noise (hash lattice + smoothstep) — the base for ridged noise.
+  function vnoise(x, seed) {
+    const i = Math.floor(x);
+    const f = x - i;
+    const u = f * f * (3 - 2 * f);
+    const a = hashOf(i, seed);
+    const b = hashOf(i + 1, seed);
+    return a + (b - a) * u; // 0..1
+  }
+  function hashOf(n, seed) {
+    const s = Math.sin(n * 127.1 + seed * 311.7) * 43758.5453;
+    return s - Math.floor(s);
+  }
+
+  // Ridged multifractal (1D): folds noise into sharp V-shaped ridges and
+  // weights each octave by how prominent the previous ridges were, so the
+  // biggest massifs carry the most detail — the classic mountain-range
+  // generator (Acerola / Josh's Channel / The Mountains of Madness). This
+  // gives jagged skylines; plain additive noise only makes smooth bumps.
+  function ridged(a, seed) {
+    let amp = 0.5, freq = 1, sum = 0, norm = 0, prev = 1;
+    for (let o = 0; o < 5; o++) {
+      let n = 1 - Math.abs(vnoise(a * freq + seed * 13.7, seed + o * 101) * 2 - 1);
+      n *= n;
+      const w = Math.pow(Math.max(0, Math.min(1, prev * 1.5)), 0.8);
+      sum += n * amp * w;
+      norm += amp * w;
+      prev = n;
+      amp *= 0.5;
+      freq *= 2.1;
+    }
+    return sum / norm; // 0..1
+  }
+
+  // Massif envelope (where big peaks cluster) modulated by ridged detail, so
+  // crests are sharp and jagged while the valleys between massifs stay low.
+  function profile(a, peaks, seed) {
+    let env = 0;
+    for (const p of peaks) env = Math.max(env, p.h * Math.exp(-((a - p.a) ** 2) / (2 * p.w * p.w)));
+    const r = ridged(a * 1.8 + seed, seed);
+    return Math.max(4, env * (0.30 + 1.30 * Math.pow(r, 1.25)));
   }
 
   const hazed = (c, k) => [
@@ -390,7 +422,7 @@ function buildMountainRange() {
       const taper = Math.pow(0.5 - 0.5 * Math.cos(Math.PI * clamp(t, 0, 1)), 0.7);
       const a = o.a0 + (o.a1 - o.a0) * t;
       const r = o.r0 + (o.r1 - o.r0) * t + (Math.random() - 0.5) * 3;
-      const h = profile(a, o.peaks, o.midAmp, o.fineAmp, o.seed) * taper;
+      const h = profile(a, o.peaks, o.seed) * taper;
       pts.push({ a, r, h });
     }
     // Per-point colours: crest (rock -> snow), front base (rock), back base (shade).
@@ -436,49 +468,44 @@ function buildMountainRange() {
   }
 
   // --- Back range: three separated snowy massif groups. Gaps between the
-  // groups are valleys that drop all the way to the plain, and the sides
-  // beyond ±1.2 rad are open prairie — the range is not a continuous wall.
+  // groups are valleys that drop all the way to the plain, so the range
+  // reads as massifs, not a continuous wall.
   ridgeChain({
     n: 30, a0: -1.2, a1: -0.55, r0: 330, r1: 352, front: 5, back: 12, baseY: -2,
     peaks: [{ a: -1.05, h: 86, w: 0.22 }, { a: -0.75, h: 68, w: 0.18 }],
-    midAmp: 7, fineAmp: 5, seed: 1.7,
-    snowLine: 66, snowBand: 16,
+    seed: 1.7, snowLine: 66, snowBand: 16,
     rock: [0.54, 0.58, 0.66], rockDark: [0.28, 0.31, 0.38], snow: [0.94, 0.97, 1.0],
     tint: 0.99, green: false,
   });
   ridgeChain({
     n: 34, a0: -0.3, a1: 0.3, r0: 318, r1: 344, front: 5, back: 12, baseY: -2,
     peaks: [{ a: -0.1, h: 92, w: 0.20 }, { a: 0.15, h: 78, w: 0.18 }],
-    midAmp: 8, fineAmp: 5, seed: 2.9,
-    snowLine: 66, snowBand: 16,
+    seed: 2.9, snowLine: 66, snowBand: 16,
     rock: [0.55, 0.59, 0.67], rockDark: [0.29, 0.32, 0.39], snow: [0.94, 0.97, 1.0],
     tint: 1.02, green: false,
   });
   ridgeChain({
     n: 30, a0: 0.55, a1: 1.2, r0: 332, r1: 356, front: 5, back: 12, baseY: -2,
     peaks: [{ a: 0.82, h: 88, w: 0.22 }, { a: 1.12, h: 64, w: 0.18 }],
-    midAmp: 7, fineAmp: 5, seed: 4.1,
-    snowLine: 66, snowBand: 16,
+    seed: 4.1, snowLine: 66, snowBand: 16,
     rock: [0.53, 0.57, 0.65], rockDark: [0.27, 0.30, 0.37], snow: [0.94, 0.97, 1.0],
     tint: 0.98, green: false,
   });
 
   // --- Distant continuations: the range recedes into the plain instead of
-  // stopping. Low, hazy ridges fade out toward ±2.1 rad so neither side of
-  // the view ends in a hard cliff.
+  // stopping. Low, hazy ridges fade out toward ±2.9 rad (≈166°) so the edge
+  // is beyond any drag-look angle — no hard cliff from any view.
   ridgeChain({
-    n: 22, a0: -2.15, a1: -1.22, r0: 350, r1: 368, front: 4, back: 10, baseY: -2,
-    peaks: [{ a: -1.8, h: 30, w: 0.34 }, { a: -1.5, h: 18, w: 0.28 }],
-    midAmp: 5, fineAmp: 3, seed: 11.2,
-    snowLine: 999, snowBand: 1,
+    n: 26, a0: -2.9, a1: -1.22, r0: 350, r1: 372, front: 4, back: 10, baseY: -2,
+    peaks: [{ a: -2.2, h: 30, w: 0.5 }, { a: -1.7, h: 26, w: 0.3 }],
+    seed: 11.2, snowLine: 999, snowBand: 1,
     rock: [0.55, 0.59, 0.67], rockDark: [0.29, 0.32, 0.39], snow: [0.94, 0.97, 1.0],
     tint: 0.96, green: false,
   });
   ridgeChain({
-    n: 22, a0: 1.22, a1: 2.15, r0: 354, r1: 370, front: 4, back: 10, baseY: -2,
-    peaks: [{ a: 1.5, h: 20, w: 0.30 }, { a: 1.82, h: 32, w: 0.36 }],
-    midAmp: 5, fineAmp: 3, seed: 12.4,
-    snowLine: 999, snowBand: 1,
+    n: 26, a0: 1.22, a1: 2.9, r0: 354, r1: 374, front: 4, back: 10, baseY: -2,
+    peaks: [{ a: 1.7, h: 26, w: 0.3 }, { a: 2.2, h: 30, w: 0.5 }],
+    seed: 12.4, snowLine: 999, snowBand: 1,
     rock: [0.55, 0.59, 0.67], rockDark: [0.29, 0.32, 0.39], snow: [0.94, 0.97, 1.0],
     tint: 0.96, green: false,
   });
@@ -488,23 +515,21 @@ function buildMountainRange() {
   ridgeChain({
     n: 22, a0: -0.55, a1: -0.2, r0: 272, r1: 290, front: 4, back: 10, baseY: -2,
     peaks: [{ a: -0.4, h: 48, w: 0.20 }, { a: -0.28, h: 40, w: 0.16 }],
-    midAmp: 6, fineAmp: 4, seed: 5.3,
-    snowLine: 999, snowBand: 1,
+    seed: 5.3, snowLine: 999, snowBand: 1,
     rock: [0.52, 0.56, 0.63], rockDark: [0.27, 0.30, 0.36], snow: [0.94, 0.97, 1.0],
     tint: 1.03, green: false,
   });
   ridgeChain({
     n: 22, a0: 0.2, a1: 0.55, r0: 268, r1: 288, front: 4, back: 10, baseY: -2,
     peaks: [{ a: 0.35, h: 50, w: 0.20 }, { a: 0.48, h: 40, w: 0.16 }],
-    midAmp: 6, fineAmp: 4, seed: 6.6,
-    snowLine: 999, snowBand: 1,
+    seed: 6.6, snowLine: 999, snowBand: 1,
     rock: [0.52, 0.56, 0.63], rockDark: [0.27, 0.30, 0.36], snow: [0.94, 0.97, 1.0],
     tint: 0.97, green: false,
   });
 
   // --- Pine foothills: the nearest broken chain of forested ridges.
   const foot = (o) => ridgeChain({ front: 3, back: 8, baseY: -2, green: true, maxH: 30,
-    midAmp: 4, fineAmp: 2.5, snowLine: 999, snowBand: 1, tint: 1.0, ...o });
+    snowLine: 999, snowBand: 1, tint: 1.0, ...o });
   foot({ n: 16, a0: -1.1, a1: -0.75, r0: 230, r1: 244,
     peaks: [{ a: -0.95, h: 24, w: 0.20 }], seed: 7.2 });
   foot({ n: 16, a0: -0.4, a1: -0.05, r0: 226, r1: 240,
