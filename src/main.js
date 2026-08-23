@@ -17,6 +17,11 @@ try {
   window.__bootError = String((e && e.stack) || e);
   render = null;
 }
+if (!render) {
+  // Show the fallback message instead of a silent blank world.
+  document.getElementById('webgl-fallback')?.classList.add('visible');
+  document.getElementById('title')?.classList.add('hidden');
+}
 window.addEventListener('resize', () => { if (render) resize(render); });
 window.__petal = { get render() { return render; } };
 window.addEventListener('error', (e) => {
@@ -115,6 +120,12 @@ function togglePause() {
 }
 
 function startGame() {
+  if (!render) {
+    // No WebGL — the fallback screen is already showing; do not fake a game.
+    document.getElementById('webgl-fallback')?.classList.add('visible');
+    document.getElementById('title')?.classList.add('hidden');
+    return;
+  }
   started = true;
   document.getElementById('title')?.classList.add('hidden');
   document.getElementById('btnPause')?.classList.remove('hidden');
