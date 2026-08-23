@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { initRender, resize } from './render.js?v=28';
+import { initRender, resize } from './render.js?v=29';
 import { advanceWalk } from './walk.js?v=2';
 import { generateFlowers } from './world.js?v=1';
 import { HILLS } from './hill.js?v=1';

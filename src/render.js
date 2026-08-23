@@ -361,6 +361,7 @@ function buildMountainRange() {
   const pos = [];
   const col = [];
   const meta = [];
+  const index = [];
   const clamp = THREE.MathUtils.clamp;
   // Per-vertex: chain metadata packed for the shader as a vec4 —
   // (snowLine, green, tint, 0). Constant within a chain, so the fragment
@@ -436,27 +437,35 @@ function buildMountainRange() {
     const base = o.green ? [0.42, 0.49, 0.34] : [o.rock[0], o.rock[1], o.rock[2]];
     // Metadata for the shader: (snowLine, green, tint). snowLine 999 = no snow.
     const chainMeta = [o.snowLine, o.green ? 1 : 0, o.tint];
-    const F = [], C = [], B = [];
+    // Indexed emission: each control point contributes 3 shared vertices
+    // (front base, crest, back base). Adjacent quads share vertices, so
+    // computeVertexNormals yields SMOOTH normals along the ridge — the sun
+    // shades continuously instead of stepping at every quad boundary
+    // (which read as vertical bands on the non-indexed geometry).
+    const v0 = pos.length / 3; // global vertex offset for this chain
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i];
       const sa = Math.sin(p.a), ca = Math.cos(p.a);
-      C.push([p.r * sa, p.h, -p.r * ca]);
-      F.push([(p.r - o.front) * sa, o.baseY, -(p.r - o.front) * ca]);
-      B.push([(p.r + o.back) * sa, o.baseY - 1, -(p.r + o.back) * ca]);
+      // front base
+      pos.push((p.r - o.front) * sa, o.baseY, -(p.r - o.front) * ca);
+      col.push(base[0], base[1], base[2]);
+      meta.push(chainMeta[0], chainMeta[1], chainMeta[2], 0);
+      // crest
+      pos.push(p.r * sa, p.h, -p.r * ca);
+      col.push(base[0], base[1], base[2]);
+      meta.push(chainMeta[0], chainMeta[1], chainMeta[2], 0);
+      // back base
+      pos.push((p.r + o.back) * sa, o.baseY - 1, -(p.r + o.back) * ca);
+      col.push(base[0], base[1], base[2]);
+      meta.push(chainMeta[0], chainMeta[1], chainMeta[2], 0);
     }
     for (let i = 0; i < n - 1; i++) {
-      const j = i + 1;
-      const tri = (v1, v2, v3) => {
-        push(v1[0], v1[1], v1[2], base[0], base[1], base[2], chainMeta);
-        push(v2[0], v2[1], v2[2], base[0], base[1], base[2], chainMeta);
-        push(v3[0], v3[1], v3[2], base[0], base[1], base[2], chainMeta);
-      };
+      const F0 = v0 + i * 3, C0 = F0 + 1, B0 = F0 + 2;
+      const F1 = v0 + (i + 1) * 3, C1 = F1 + 1, B1 = F1 + 2;
       // front face (camera side)
-      tri(F[i], C[i], F[j]);
-      tri(C[i], C[j], F[j]);
+      index.push(F0, C0, F1, C0, C1, F1);
       // back face (shadow side)
-      tri(C[i], B[i], C[j]);
-      tri(B[i], B[j], C[j]);
+      index.push(C0, B0, C1, B0, B1, C1);
     }
   }
 
@@ -536,6 +545,9 @@ function buildMountainRange() {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.setAttribute('aMeta', new THREE.Float32BufferAttribute(meta, 4));
+  geo.setIndex(index);
+  // Shared ridge vertices + indexed emission => SMOOTH normals along the
+  // ridge, so the sun shades continuously instead of stepping per quad.
   geo.computeVertexNormals();
 
   // Procedural rock texturing in the fragment shader. Flat vertex colors read
@@ -602,14 +614,8 @@ function buildMountainRange() {
         vec3 N = normalize(vNormal);
         if (!gl_FrontFacing) N = -N;
 
-        // Gentle low-frequency bump: varies sun lighting within a facet
-        // without the speckle a strong high-frequency bump produced.
-        vec3 bump = vec3(
-          vnoise(vLocal * 0.8 + 5.0) - 0.5,
-          vnoise(vLocal * 0.8 + 9.0) - 0.5,
-          vnoise(vLocal * 0.8 + 13.0) - 0.5);
-        N = normalize(N + bump * 0.22);
-
+        // Smooth normals (indexed geometry, shared ridge vertices) already
+        // shade continuously along the ridge; no bump needed.
         float snowLine = vMeta.x;
         float green = vMeta.y;
         float tint = vMeta.z;
@@ -624,10 +630,10 @@ function buildMountainRange() {
         col *= tint;
 
         // Continuous noise fields in LOCAL space — glued to the geometry,
-        // so no world-position swimming as the walker moves.
+        // so no world-position swimming as the walker moves. Only broad and
+        // mid frequencies: fine grain at this distance aliases to static.
         float n1 = fbm(vLocal * 0.10);  // broad structure
-        float n2 = fbm(vLocal * 0.40);  // mid detail
-        float n3 = fbm(vLocal * 1.30);  // fine grain
+        float n2 = fbm(vLocal * 0.38);  // mid detail
 
         // Snow from local height + noise-displaced snowline: ragged but
         // continuous along the ridge (no per-quad banding).
@@ -638,8 +644,8 @@ function buildMountainRange() {
         }
         snow *= 1.0 - green;
 
-        // Rock grain.
-        col *= 0.93 + 0.14 * n3 * (1.0 - snow);
+        // Rock grain — subtle, broad so it does not alias.
+        col *= 0.96 + 0.08 * n2 * (1.0 - snow);
 
         // Scree: loose darker talus on steep faces, absent under snow.
         float slope = 1.0 - clamp(N.y, 0.0, 1.0);
