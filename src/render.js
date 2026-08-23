@@ -212,7 +212,7 @@ function curvedPetal(len, wide, tint = 0) {
     pos.setY(i, y * widthScale);
 
     // Shallow spoon curl: tip arches toward +z, edges lift a touch (concave).
-    const cup = 0.12 * len;
+    const cup = 0.28 * len;
     pos.setZ(i, cup * Math.pow(t, 1.4) + cup * 0.35 * u * u * t);
 
     // Brightness gradient (brighter toward the tip) plus a subtle warm/cool
@@ -277,7 +277,7 @@ function buildFlowerGeometry({ petalRadius = 0.5, centerRadius = 0.26, petals = 
   // layer cups more upright, the outer opens flatter, and every petal is
   // tinted slightly differently so the bloom reads organic, not cloned.
   for (let layer = 0; layer < 2; layer++) {
-    const tilt = layer === 0 ? 0.35 : 0.7; // radians of upward cup toward +z
+    const tilt = layer === 0 ? 0.65 : 1.05; // steeper cup so blooms read dimensional
     for (let i = 0; i < petals; i++) {
       const a = ((i + layer * 0.5) / petals) * Math.PI * 2;
       const g = curvedPetal(petalRadius * 0.9, petalRadius * 0.55, petalTint(i * 2 + layer));
@@ -286,7 +286,7 @@ function buildFlowerGeometry({ petalRadius = 0.5, centerRadius = 0.26, petals = 
       g.translate(
         Math.cos(a) * petalRadius * 1.05 * spread,
         Math.sin(a) * petalRadius * 1.05 * spread,
-        (layer === 0 ? 0 : -0.10) // back layer set slightly behind
+        (layer === 0 ? 0 : -0.24) // back layer further behind to prevent z-fighting at close range
       );
       parts.push(g);
     }
@@ -824,6 +824,9 @@ export function initRender(canvas) {
           const sc = 1 + Math.sin(timeSec * 2.5 + i) * 0.06;
           dummy.position.set(b.x, crownY, b.z);
           dummy.scale.setScalar(sc * KIND_SCALE[kind]);
+          // Billboard: always face the camera horizontally so petals never
+          // collapse into edge-on lines as the walker passes by.
+          dummy.rotation.y = Math.atan2(camera.position.x - b.x, camera.position.z - b.z);
           dummy.updateMatrix();
           mesh.setMatrixAt(local, dummy.matrix);
           const stemMesh = stemMeshes[kind];
