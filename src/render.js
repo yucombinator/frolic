@@ -1077,6 +1077,10 @@ export function initRender(canvas) {
     clouds.push(c);
   }
 
+  // Distant Rockies on the horizon, tracked with the camera below.
+  const mountains = buildMountainRange();
+  scene.add(mountains);
+
   // Distant lakes in the valleys ahead (randomized; may be none).
   const lakes = buildLakes();
   if (lakes) scene.add(lakes);
@@ -1264,6 +1268,12 @@ export function initRender(canvas) {
         if (c.position.x > 190) c.position.x = -190;
         c.position.z = camera.position.z + c.userData.zo;
       }
+
+      // Mountains sit on the horizon — follow the walker so the range stays
+      // put in the distance while the plains scroll by.
+      mountains.position.set(camera.position.x, 0, camera.position.z);
+      // Lakes ride along in the valleys ahead, same frame as the range.
+      if (lakes) lakes.position.set(camera.position.x, 0, camera.position.z);
 
       // Pollen motes drift on the wind inside a box that follows the camera.
       motes.position.copy(camera.position);
