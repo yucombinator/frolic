@@ -463,6 +463,26 @@ function buildMountainRange() {
     tint: 0.98, green: false,
   });
 
+  // --- Distant continuations: the range recedes into the plain instead of
+  // stopping. Low, hazy ridges fade out toward ±2.1 rad so neither side of
+  // the view ends in a hard cliff.
+  ridgeChain({
+    n: 22, a0: -2.15, a1: -1.22, r0: 350, r1: 368, front: 4, back: 10, baseY: -2,
+    peaks: [{ a: -1.8, h: 30, w: 0.34 }, { a: -1.5, h: 18, w: 0.28 }],
+    midAmp: 5, fineAmp: 3, seed: 11.2,
+    snowLine: 999, snowBand: 1,
+    rock: [0.55, 0.59, 0.67], rockDark: [0.29, 0.32, 0.39], snow: [0.94, 0.97, 1.0],
+    tint: 0.96, green: false,
+  });
+  ridgeChain({
+    n: 22, a0: 1.22, a1: 2.15, r0: 354, r1: 370, front: 4, back: 10, baseY: -2,
+    peaks: [{ a: 1.5, h: 20, w: 0.30 }, { a: 1.82, h: 32, w: 0.36 }],
+    midAmp: 5, fineAmp: 3, seed: 12.4,
+    snowLine: 999, snowBand: 1,
+    rock: [0.55, 0.59, 0.67], rockDark: [0.29, 0.32, 0.39], snow: [0.94, 0.97, 1.0],
+    tint: 0.96, green: false,
+  });
+
   // --- Mid ridges: sit in front of the valley mouths, lower than the back
   // massifs, so the valleys read as depth-layered passes onto the range.
   ridgeChain({
