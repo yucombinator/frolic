@@ -19,6 +19,7 @@ let ambientVoices = new Set(); // { osc, g, stop }
 let chordArmed = false; // a chord chain is scheduled
 let sparkArmed = false; // a sparkle chain is scheduled
 let lfo = null;
+let birdsTimer = null; // timeout handle for the wandering birdsong
 
 // Slow, spacey chord cycle (each entry: array of frequencies in Hz).
 // Voices drift between m9 / add9 / maj7 colour in a C-major-ish family.
@@ -287,6 +288,66 @@ function getApi() {
         hushAmbient(0.3);
       } else if (was && ambientEnabled) {
         this.resumeAmbient();
+      }
+    },
+    // A quick two-note birdsong chirp, panned somewhere across the meadow.
+    bird() {
+      if (!ctx || muted) return;
+      if (ctx.state === 'suspended') ctx.resume();
+      const t = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+      osc.type = 'sine';
+      const base = 2400 + Math.random() * 1100;
+      osc.frequency.setValueAtTime(base, t);
+      osc.frequency.exponentialRampToValueAtTime(base * 1.35, t + 0.07);
+      osc.frequency.exponentialRampToValueAtTime(base * 0.85, t + 0.16);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.09, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+      osc.connect(gain);
+      if (pan) {
+        pan.pan.value = Math.random() * 1.6 - 0.8;
+        gain.connect(pan).connect(master);
+      } else {
+        gain.connect(master);
+      }
+      osc.start(t);
+      osc.stop(t + 0.35);
+    },
+    // Soft grass-crunch footstep, one per stride. `stride` is the number of
+    // half-cycles crossed this frame (1 = walk, 2 = jog) — louder when jogging.
+    footstep(stride) {
+      if (!ctx || muted || !stride) return;
+      if (ctx.state === 'suspended') ctx.resume();
+      const t = ctx.currentTime;
+      const src = ctx.createBufferSource();
+      const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.09), ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      src.buffer = buf;
+      const gain = ctx.createGain();
+      gain.gain.value = stride > 1 ? 0.5 : 0.34;
+      const filt = ctx.createBiquadFilter();
+      filt.type = 'lowpass';
+      filt.frequency.value = 900;
+      src.connect(filt).connect(gain).connect(master);
+      src.start(t);
+    },
+    // Wandering birdsong while walking: a chirp every 4-12 seconds.
+    startBirds() {
+      if (!ctx || birdsTimer) return;
+      const chirp = () => {
+        this.bird();
+        birdsTimer = setTimeout(chirp, 4000 + Math.random() * 8000);
+      };
+      chirp();
+    },
+    stopBirds() {
+      if (birdsTimer) {
+        clearTimeout(birdsTimer);
+        birdsTimer = null;
       }
     },
     get ambientRunning() {
