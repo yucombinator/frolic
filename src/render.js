@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { FLOWER_KINDS } from './world.js';
-import { HILLS } from './hill.js';
-import { windAt } from './wind.js';
+import { FLOWER_KINDS } from './world.js?v=1';
+import { HILLS } from './hill.js?v=1';
+import { windAt } from './wind.js?v=1';
 import { createGrass } from './grass.js?v=9';
-import { EYE_HEIGHT } from './walk.js';
+import { EYE_HEIGHT } from './walk.js?v=1';
 
 export const SKY_TOP = 0x529ef0;
 export const SKY_BOTTOM = 0xc8e6ff;

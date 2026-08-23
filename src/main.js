@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { initRender, resize } from './render.js?v=1';
-import { advanceWalk } from './walk.js';
-import { generateFlowers } from './world.js';
-import { HILLS } from './hill.js';
-import { initAudio } from './audio.js';
+import { initRender, resize } from './render.js?v=2';
+import { advanceWalk } from './walk.js?v=1';
+import { generateFlowers } from './world.js?v=1';
+import { HILLS } from './hill.js?v=1';
+import { initAudio } from './audio.js?v=1';
 
 const canvasWrap = document.getElementById('game');
 const canvas = document.createElement('canvas');

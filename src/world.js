@@ -35,6 +35,7 @@ export function generateFlowers({ seed, zFrom, zTo, halfWidth }) {
         x,
         y: HILLS.height(x, fz),
         z: fz,
+        kind: kindIndex, // render.js scaleBuds reads b.kind
         kindIndex,
         colorHex: PALETTE[Math.floor(rand() * PALETTE.length)],
       });
